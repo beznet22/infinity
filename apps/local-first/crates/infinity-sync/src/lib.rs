@@ -19,6 +19,7 @@
 mod lease;
 mod snapshot;
 mod store;
+mod thread;
 mod types;
 
 #[cfg(feature = "http")]
@@ -30,6 +31,10 @@ pub use lease::{
 };
 pub use snapshot::{SnapshotPayload, replay, snapshot_event};
 pub use store::{CursorStore, EventStore, FileEventStore};
+pub use thread::{
+    MessagePayload, Role, TranscriptEntry, alternatives, message, message_event, transcript,
+    versions,
+};
 pub use types::{Cursor, DeviceId, EventKind, SessionId, SyncEvent, now_ms};
 
 /// Errors raised by the sync layer.

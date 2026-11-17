@@ -60,6 +60,8 @@ impl fmt::Display for SessionId {
 #[serde(rename_all = "snake_case")]
 pub enum EventKind {
     UserMessage,
+    /// A completed assistant reply, as opposed to a streaming `AssistantChunk`.
+    AssistantMessage,
     AssistantChunk,
     ToolCall,
     ToolResult,

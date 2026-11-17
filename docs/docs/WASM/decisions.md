@@ -383,6 +383,15 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Limits (honest):** the read-then-write check is not atomic under concurrent pushes to the same session — two racing writes can both pass. The lease claim is still the primary serialization; the fence removes the long-tail window, not every race. A Durable Object or a conditional `INSERT … WHERE` per session would close it.
 - **Unfenced writes:** an event with no fence counts as 0, so once a session has taken a lease only fenced writes are accepted. This is deliberate; the CLI stamps the current holder's fence.
 
+## D47 — Edits are messages with a parent pointer ✅
+- **Model:** every message records `reply_to` (the message it answers) and, when it is an edit, `edited_from` (the version it replaces). No separate branch id: a branch is the set of versions reachable through `edited_from`, so there is nothing extra to keep coherent across devices.
+- **Fork point:** an edit keeps the original's `reply_to`, so the fork happens *at* the edited message, not after the answer it already received.
+- **Visibility:** a superseded version is hidden, and so is anything whose `reply_to` chain passes through one. The answer to the old text therefore disappears with it — the behavior ChatGPT users expect.
+- **Helpers:** `transcript()` (visible rows + version counts), `versions()` (the whole edit group, oldest first), `alternatives()` (siblings under a parent, for a switcher), `message()` (lookup).
+- **Verified:** 21 crate tests, plus a CLI run: original + answer → edit → thread shows only `edited question` (v2) → answer the edit → thread shows the new pair. The stale answer never appears.
+- **Limits:** the transcript renders the newest version only; earlier versions are stored and retrievable but there is no switcher UI yet (that belongs with the thread list, #128). Editing does not delete history — the relay keeps every version.
+- **Assumption:** message payloads are `MessagePayload` JSON. Older ad-hoc payloads without `reply_to`/`edited_from` still render (test covers it).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

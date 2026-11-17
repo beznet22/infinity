@@ -5,6 +5,9 @@
 //! sync-device --root DIR --device ID --relay URL push
 //! sync-device --root DIR --device ID --relay URL pull  --session S
 //! sync-device --root DIR --device ID sessions
+//! sync-device --root DIR --device ID write --session S --text "..." [--assistant --reply-to E]
+//! sync-device --root DIR --device ID edit  --session S --event E --text "..."
+//! sync-device --root DIR --device ID thread --session S
 //! ```
 //!
 //! Each device owns its own `--root`, which is exactly how the multi-device test
@@ -14,9 +17,11 @@ use std::path::PathBuf;
 
 use infinity_sync::http::HttpTransport;
 use infinity_sync::{
-    CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, LeaseGuard,
-    SessionId, SyncEvent, current_lease, lease_event, next_fence, now_ms, replay, snapshot_event,
+    CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, LeaseGuard, Role,
+    SessionId, SyncEvent, current_lease, lease_event, message, message_event, next_fence, now_ms,
+    replay, snapshot_event, transcript, versions,
 };
+use uuid::Uuid;
 
 struct Args {
     root: PathBuf,
@@ -27,6 +32,23 @@ struct Args {
     text: Option<String>,
     ttl_ms: Option<u64>,
     state: Option<String>,
+    event: Option<Uuid>,
+    reply_to: Option<Uuid>,
+    assistant: bool,
+}
+
+/// Stamp the writer's fencing token when it currently holds the session.
+async fn stamp_fence<S: EventStore>(
+    store: &S,
+    session: &SessionId,
+    device: &DeviceId,
+    event: SyncEvent,
+) -> Result<SyncEvent, infinity_sync::SyncError> {
+    let events = store.events_since(session, 0).await?;
+    Ok(match current_lease(&events, now_ms()) {
+        Some(lease) if &lease.owner == device => event.with_fence(lease.fence),
+        _ => event,
+    })
 }
 
 fn parse() -> Result<Args, String> {
@@ -38,6 +60,9 @@ fn parse() -> Result<Args, String> {
     let mut text = None;
     let mut ttl_ms = None;
     let mut state = None;
+    let mut event = None;
+    let mut reply_to = None;
+    let mut assistant = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -58,6 +83,21 @@ fn parse() -> Result<Args, String> {
                 )
             }
             "--state" => state = Some(take("--state")?),
+            "--event" => {
+                event = Some(
+                    take("--event")?
+                        .parse()
+                        .map_err(|_| "--event must be a UUID".to_owned())?,
+                )
+            }
+            "--reply-to" => {
+                reply_to = Some(
+                    take("--reply-to")?
+                        .parse()
+                        .map_err(|_| "--reply-to must be a UUID".to_owned())?,
+                )
+            }
+            "--assistant" => assistant = true,
             other if command.is_none() => command = Some(other.to_owned()),
             other => return Err(format!("unexpected argument {other}")),
         }
@@ -72,6 +112,9 @@ fn parse() -> Result<Args, String> {
         text,
         ttl_ms,
         state,
+        event,
+        reply_to,
+        assistant,
     })
 }
 
@@ -89,29 +132,87 @@ async fn main() -> Result<(), String> {
             let session = args.session.clone().ok_or("write needs --session")?;
             let text = args.text.clone().ok_or("write needs --text")?;
             let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
-            // Stamp the writer's fencing token when it holds the lease; the relay
-            // drops writes that carry an older one.
+            let kind = if args.assistant {
+                EventKind::AssistantMessage
+            } else {
+                EventKind::UserMessage
+            };
+            let event = message_event(
+                session.clone(),
+                args.device.clone(),
+                seq,
+                kind,
+                text,
+                args.reply_to,
+                None,
+            );
+            let event = stamp_fence(&store, &session, &args.device, event)
+                .await
+                .map_err(|e| e.to_string())?;
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            println!(
+                "{}",
+                serde_json::json!({ "session": session.as_str(), "seq": seq, "event": event.event_id, "reply_to": args.reply_to })
+            );
+        }
+        "edit" => {
+            // Editing forks the thread at the edited message: the new version
+            // replaces the old text but keeps its parent, so the answers to the
+            // old text do not carry over.
+            let session = args.session.clone().ok_or("edit needs --session")?;
+            let text = args.text.clone().ok_or("edit needs --text")?;
+            let target = args
+                .event
+                .ok_or("edit needs --event (the message to replace)")?;
             let events = store
                 .events_since(&session, 0)
                 .await
                 .map_err(|e| e.to_string())?;
-            let fence = current_lease(&events, now_ms())
-                .filter(|lease| lease.owner == args.device)
-                .map(|lease| lease.fence);
-            let mut event = SyncEvent::new(
+            let original = message(&events, target).ok_or("no message with that --event id")?;
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let event = message_event(
                 session.clone(),
                 args.device.clone(),
                 seq,
                 EventKind::UserMessage,
-                serde_json::json!({ "text": text, "at": now_ms() }),
+                text,
+                original.reply_to,
+                Some(target),
             );
-            if let Some(fence) = fence {
-                event = event.with_fence(fence);
-            }
+            let event = stamp_fence(&store, &session, &args.device, event)
+                .await
+                .map_err(|e| e.to_string())?;
             store.append(&event).await.map_err(|e| e.to_string())?;
             println!(
                 "{}",
-                serde_json::json!({ "session": session.as_str(), "seq": seq, "event": event.event_id })
+                serde_json::json!({
+                    "session": session.as_str(),
+                    "replaces": target,
+                    "event": event.event_id,
+                    "versions": versions(&events, target).len() + 1,
+                })
+            );
+        }
+        "thread" => {
+            let session = args.session.clone().ok_or("thread needs --session")?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            let rows: Vec<serde_json::Value> = transcript(&events)
+                .into_iter()
+                .map(|row| {
+                    serde_json::json!({
+                        "role": match row.role { Role::User => "user", Role::Assistant => "assistant" },
+                        "text": row.text,
+                        "versions": row.versions,
+                        "event": row.event_id,
+                    })
+                })
+                .collect();
+            println!(
+                "{}",
+                serde_json::json!({ "session": session.as_str(), "messages": rows })
             );
         }
         "push" => {
