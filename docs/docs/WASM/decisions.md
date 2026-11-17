@@ -476,6 +476,12 @@ Asked explicitly; the honest state:
 - **What the increase buys:** bundled SQLite (durable log) and wasmi (tool isolation). Neither is removable without losing a property the plan requires.
 - **Still open:** the cross-platform E2E matrix (desktop → Android → browser with shared assertions) is not scripted yet.
 
+## D59 — One pure renderer, commands as data ✅
+- **Shape:** `renderThreads(root, {sessions, active}, {onCommand, onSelect})` draws the thread list, read-only banner, transcript with version badges, queue tray, restore controls and composer. It never fetches or writes: interactions emit commands (`enqueue`, `dequeue`, `send`, `edit`, `versions`, `restore`, `select`) that the host applies to the log.
+- **Why pure:** Android and the browser then share one UI. The only difference is where `SessionView` JSON and commands travel (Tauri command vs wasm binding).
+- **Verified in headless Chrome** with a two-session fixture: banner reads `laptop is writing — read-only`, transcript shows both messages, queue count 1, composer and send are disabled while read-only, the badge reads `2 versions`, and clicking emitted exactly `versions`, `edit`, `restore`, `dequeue`, `select`, `enqueue` in that order. Switching to the writable session re-enables the composer.
+- **Limit, stated plainly:** this is the renderer, not the product. It is not yet fed by live data on Android or in the browser (todo #140), and there is no pagination or virtualised transcript for long sessions.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
