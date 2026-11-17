@@ -16,12 +16,18 @@
 //! carry a writer-assigned id, so a retried push is deduplicated rather than
 //! duplicated.
 
+mod lease;
+mod snapshot;
 mod store;
 mod types;
 
 #[cfg(feature = "http")]
 pub mod http;
 
+pub use lease::{
+    current_lease, lease_event, may_write, LeaseAction, LeasePayload, LeaseState, DEFAULT_TTL_MS,
+};
+pub use snapshot::{replay, snapshot_event, SnapshotPayload};
 pub use store::{CursorStore, EventStore, FileEventStore};
 pub use types::{Cursor, DeviceId, EventKind, SessionId, SyncEvent, now_ms};
 

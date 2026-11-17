@@ -322,6 +322,14 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Consequence:** the browser's storage is now the core's own stores, not a JS side path. A SQLite/OPFS backend can be swapped behind the same handle later if query needs appear; nothing in the core changes.
 - **Remaining browser work:** the Worker-isolated tool sandbox and the wake path (Web Push + RAP callbacks).
 
+## D40 — Leases and snapshots are events, derived not coordinated ✅
+- **Lease design:** `LeaseClaim` events carry `{ owner, action, expires_at_ms }`. `current_lease(events, now)` replays them: later wins, an expired claim means nobody holds it, and an explicit `Release` clears immediately. `may_write(events, device, now)` is the guard. Default TTL is 60 s.
+- **Why events:** the relay stays dumb (D31), every device derives the same answer from the same history, and an offline device still knows who owned a session as of its last sync. No coordinator, no heartbeat endpoint.
+- **Snapshot design:** `Snapshot { state, covered_events }` plus `replay(events) -> (Option<state>, tail)` — "latest snapshot + everything after it". A fresh device and one that missed three events use the same rule.
+- **Tested:** `infinity-sync` now has **12 tests** — claim/renew/expire/release, last-claim-wins, malformed lease payloads, replay with and without snapshots, multi-snapshot tail, payload round-trip.
+- **Demonstrated through the CLI** (`local-sync`): `write` → `lease` (`holder: laptop`) → `snapshot` (`covered: 2`) → `write` → `replay` (`has_snapshot: true, tail: 1`).
+- **Not yet enforced:** the lease is advisory in the sync layer. Wiring `may_write` into turn start (and renewing it during a long turn) is the remaining step; until then two devices *can* both run a session.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

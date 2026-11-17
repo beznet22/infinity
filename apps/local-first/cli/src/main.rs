@@ -14,7 +14,8 @@ use std::path::PathBuf;
 
 use infinity_sync::http::HttpTransport;
 use infinity_sync::{
-    now_ms, CursorStore, DeviceId, EventKind, EventStore, FileEventStore, SessionId, SyncEvent,
+    current_lease, lease_event, now_ms, replay, snapshot_event, CursorStore, DeviceId, EventKind,
+    EventStore, FileEventStore, LeaseAction, SessionId, SyncEvent,
 };
 
 struct Args {
@@ -24,6 +25,8 @@ struct Args {
     command: String,
     session: Option<SessionId>,
     text: Option<String>,
+    ttl_ms: Option<u64>,
+    state: Option<String>,
 }
 
 fn parse() -> Result<Args, String> {
@@ -33,6 +36,8 @@ fn parse() -> Result<Args, String> {
     let mut command = None;
     let mut session = None;
     let mut text = None;
+    let mut ttl_ms = None;
+    let mut state = None;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -46,6 +51,14 @@ fn parse() -> Result<Args, String> {
             "--relay" => relay = Some(take("--relay")?),
             "--session" => session = Some(SessionId::new(take("--session")?)),
             "--text" => text = Some(take("--text")?),
+            "--ttl" => {
+                ttl_ms = Some(
+                    take("--ttl")?
+                        .parse()
+                        .map_err(|_| "--ttl must be milliseconds".to_string())?,
+                )
+            }
+            "--state" => state = Some(take("--state")?),
             other if command.is_none() => command = Some(other.to_string()),
             other => return Err(format!("unexpected argument {other}")),
         }
@@ -58,6 +71,8 @@ fn parse() -> Result<Args, String> {
         command: command.ok_or("a command is required")?,
         session,
         text,
+        ttl_ms,
+        state,
     })
 }
 
@@ -129,6 +144,59 @@ async fn main() -> Result<(), String> {
             println!(
                 "{}",
                 serde_json::json!({ "session": session.as_str(), "fetched": stored.len(), "position": highest, "events": store.events_since(&session, 0).await.map_err(|e| e.to_string())?.len() })
+            );
+        }
+        "lease" => {
+            // Default action is a claim; `LocalLeaseAction` is derived from the
+            // presence of --ttl only, so the demo stays explicit and small.
+            let session = args.session.clone().ok_or("lease needs --session")?;
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let event = lease_event(
+                session.clone(),
+                args.device.clone(),
+                seq,
+                LeaseAction::Claim,
+                args.ttl_ms.unwrap_or(infinity_sync::DEFAULT_TTL_MS),
+                now_ms(),
+            );
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            let events = store.events_since(&session, 0).await.map_err(|e| e.to_string())?;
+            let holder = current_lease(&events, now_ms()).map(|lease| lease.owner.to_string());
+            println!(
+                "{}",
+                serde_json::json!({ "session": session.as_str(), "seq": seq, "holder": holder })
+            );
+        }
+        "snapshot" => {
+            let session = args.session.clone().ok_or("snapshot needs --session")?;
+            let state: serde_json::Value = serde_json::from_str(
+                args.state.as_deref().ok_or("snapshot needs --state (JSON)")?,
+            )
+            .map_err(|error| format!("--state must be JSON: {error}"))?;
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let covered = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?
+                .len();
+            let event = snapshot_event(session.clone(), args.device.clone(), seq, state, covered);
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            println!(
+                "{}",
+                serde_json::json!({ "session": session.as_str(), "seq": seq, "covered": covered })
+            );
+        }
+        "replay" => {
+            let session = args.session.clone().ok_or("replay needs --session")?;
+            let events = store.events_since(&session, 0).await.map_err(|e| e.to_string())?;
+            let (state, tail) = replay(&events);
+            println!(
+                "{}",
+                serde_json::json!({
+                    "session": session.as_str(),
+                    "has_snapshot": state.is_some(),
+                    "tail": tail.len(),
+                })
             );
         }
         "sessions" => {
