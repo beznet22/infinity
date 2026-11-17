@@ -1,0 +1,12 @@
+# WASM build configuration for the Infinity Hybrid fork.
+# See docs/docs/WASM/implementation-plan.md chunk 0.1 and overview §9.
+#
+# getrandom 0.3/0.4 refuse to build for wasm32-unknown-unknown unless the
+# `wasm_js` backend is selected. The backend also requires the `wasm_js`
+# feature to be enabled on the getrandom dependency of any crate that needs
+# randomness on wasm (see the wasm-targeted crates' Cargo.toml files).
+#
+# This section only affects the wasm32-unknown-unknown target: native builds
+# are untouched.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

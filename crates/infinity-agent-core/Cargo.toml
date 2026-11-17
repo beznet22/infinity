@@ -21,10 +21,25 @@ async-trait = { workspace = true }
 async-stream = "0.3"
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
-uuid = { workspace = true }
 url = { workspace = true }
 tracing = { workspace = true }
 rhai = { workspace = true }
+
+# `uuid` needs a randomness source that differs per target: the host uses
+# getrandom, while wasm32-unknown-unknown must use the browser's
+# `crypto.getRandomValues` via uuid's `js` feature (without it uuid emits a
+# compile_error! on this target).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+uuid = { workspace = true, features = ["v4"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["v4", "js"] }
+# rhai -> ahash pulls getrandom 0.3, whose wasm32-unknown-unknown backend is
+# opt-in. Enabling `wasm_js` here unifies the feature across the graph (a
+# direct dependency is the documented way to enable a transitive crate's
+# feature); the matching `--cfg getrandom_backend="wasm_js"` rustflag lives
+# in `/.cargo/config.toml`.
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [dev-dependencies]
 insta = { version = "1", features = ["json", "redactions"] }

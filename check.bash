@@ -60,6 +60,17 @@ step "Doctests"
 cargo test --doc || fail "doctests failed"
 pass "All doctests passed"
 
+step "WASM readiness (wasm32-unknown-unknown)"
+# Phase 0 gate for the wasm foundation crates. While the fork is migrating
+# crate-by-crate this script tracks the expected-red set instead of requiring
+# everything to pass; see docs/docs/WASM/implementation-plan.md chunk 0.
+if rustup target list --installed | grep -qx wasm32-unknown-unknown; then
+    bash scripts/check-wasm.bash || fail "WASM readiness gate failed"
+    pass "WASM readiness gate matches the expected Phase 0 state"
+else
+    echo '  (skipped: run `rustup target add wasm32-unknown-unknown`)'
+fi
+
 step "Web UI e2e (Playwright)"
 # Requires npm (the bundled-web build script runs vite) and the Playwright
 # chromium build matching playwright-rs's bundled driver (1.60 → r1223):
