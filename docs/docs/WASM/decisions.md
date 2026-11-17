@@ -125,6 +125,13 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Rejected:** all five chunks as written (unverifiable AWS refactor, abstraction guessed from one implementation); only 1.1 (leaves no assembly point for Phases 2–3).
 - **Consequence:** overview §4 still lists the four adapter roles, but only `SandboxExecutor` and `McpTransport` are realised in Phase 1; `SliceRunner` / `AgentCoordinator` remain planned names until Phase 3/4.
 
+## D20 — `HostCtx` lives in a new `infinity-host` crate ✅
+- **Question:** where to put the host capability bundle, given its pieces live in crates that do not depend on each other (`rap-client`, `infinity-agent-core`, `sandbox-core`, `infinity-mcp-bridge`).
+- **Decision (user):** a new fork-only crate `crates/infinity-host` (`publish = false`) that depends on all four and forwards a default-on `native` feature to `sandbox-core` and `infinity-mcp-bridge`.
+- **Rejected:** in `infinity-agent-core` without the sandbox slot (it would restate `AgentSystemBuilder<C, S, M, H>` and still omit sandbox/MCP); in `infinity-agent-core` with a `sandbox-core` dependency (couples the runtime core to the sandbox crate and drags its feature surface into every agent-core consumer).
+- **Shape:** a generic bundle `HostCtx<C, S, H, T, E>` with accessors, `with_mcp_transport` and `into_parts`; MCP is `Option<McpTransportFactory>` because not every host exposes MCP servers. It deliberately **excludes** `ThreadConfigSource` — that trait is generic over the system's `M`/`H` and holds `Rc<dyn Tool<M>>`, so it is per-system, not per-host — and the deferred `SliceTimer` / `CallbackIngest` slots (D18).
+- **Verified:** 2 tests (capability access, optional MCP + `into_parts`), compiles for `wasm32-unknown-unknown` with `--no-default-features`, clippy clean.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

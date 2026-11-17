@@ -51,6 +51,11 @@ Notes:
   ```
 
   With `native` off, `McpClient::stdio` / `McpToolSet::stdio` are not available; the Streamable-HTTP transport stays.
+- `infinity-host` (the `HostCtx` bundle) forwards the same switch, so wasm consumers disable it once:
+
+  ```toml
+  infinity-host = { path = "../infinity-host", version = "^0.2.0", default-features = false }
+  ```
 - The flag is safe on native too: it only drops the server/git/jj (and stdio-MCP) surface, which the native crates enable by default.
 
 ### 2. RNG: getrandom and uuid

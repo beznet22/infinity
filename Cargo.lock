@@ -2855,6 +2855,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "infinity-host"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "infinity-agent-core",
+ "infinity-mcp-bridge",
+ "rap-client",
+ "sandbox-core",
+ "tokio",
+]
+
+[[package]]
 name = "infinity-mcp-bridge"
 version = "0.2.0"
 dependencies = [

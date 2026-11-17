@@ -34,6 +34,7 @@ CRATES=(
     infinity-agent-core
     sandbox-core
     infinity-mcp-bridge
+    infinity-host
 )
 
 # Crates still expected to FAIL. Remove entries as Phase 0 chunks land; the gate
@@ -66,7 +67,7 @@ for crate in "${CRATES[@]}"; do
     # process handles, stdio MCP transport): a browser build is their
     # no-default-features configuration. See docs/docs/WASM/README.md.
     case "$crate" in
-        sandbox-core | infinity-mcp-bridge) extra=(--no-default-features) ;;
+        sandbox-core | infinity-mcp-bridge | infinity-host) extra=(--no-default-features) ;;
         *) extra=() ;;
     esac
 

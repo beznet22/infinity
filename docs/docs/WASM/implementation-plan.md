@@ -109,7 +109,10 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 - "Thread registry, routing, persistence", grounded on `infinity-daemon/src/session/mod.rs:11-17` + `PersistentConversationStore`/`PersistentStateStore`. Daemon refactored onto it, behavior-preserving. SharedWorker (3.3) and DO (4.1) become future impls.
 - **Accept:** trait defined; daemon refactored; daemon tests green.
 
-### 1.4 `HostCtx` capability bundle (**D20**)
+### 1.4 `HostCtx` capability bundle (**D20**) *(implemented in a new crate)*
+
+- **As implemented:** fork-only crate `crates/infinity-host` (publish = false) with `HostCtx<C, S, H, T, E>`: conversation/state stores, `HttpClient`, `ToolsetCache`, `SandboxExecutor`, plus `Option<McpTransportFactory>`; accessors and `into_parts`. A default-on `native` feature forwards to `sandbox-core`/`infinity-mcp-bridge`, so browser consumers use `default-features = false`.
+- **Excluded by design:** `ThreadConfigSource` (per-system, not per-host — it is generic over the system's sender and holds `Rc<dyn Tool<M>>`) and the deferred `SliceTimer` / `CallbackIngest` slots (D18).
 - One struct/trait assembled by the host: `HttpClient`, `ToolsetCache`, `ConversationStore`+`StateStore`, `SliceTimer`, `ThreadConfigSource`, `SandboxExecutor`, MCP transport factory, `CallbackIngest`. Generic where the pieces are already injected (`system/config.rs:38-40` pattern).
 - **Accept:** compiles on host + wasm32; daemon/lambda assemble it natively; a full mock bundle unit test exists.
 

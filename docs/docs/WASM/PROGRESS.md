@@ -36,7 +36,7 @@ Chunk IDs below are authoritative from `implementation-plan.md`. All work is ⬜
 | Phase | Chunks | Scope | Status |
 |---|---|---|---|
 | 0 | 0.1–0.8 | WASM readiness (W1–W10 + CI gate) | ✅ complete — 7/7 green |
-| 1 | 1.1–1.5 | Core adapter traits + `HostCtx` (D20) | 🔶 1.1, 1.5 done; 1.2/1.3 deferred (D19); 1.4 pending |
+| 1 | 1.1–1.5 | Core adapter traits + `HostCtx` (D20) | ✅ complete — 1.2/1.3 deferred (D19) |
 | 2 | 2.1–2.4 | Consumer archetype: Android Tauri app | ⬜ |
 | 3 | 3.1–3.4 | Browser runtime (`crates/infinity-wasm`) | ⬜ |
 | 4 | 4.1–4.3 | `infinity-remote-adapters` + worker archetype + optional relay (D21) | ⬜ |
@@ -72,7 +72,7 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | 1.1 | `SandboxExecutor` trait + `ProcessSandboxExecutor` + tests | ✅ |
 | 1.2 | `SliceRunner` trait — **deferred to Phase 3/4 (D19)** | ⏭ |
 | 1.3 | `AgentCoordinator` trait — **deferred to Phase 3/4 (D19)** | ⏭ |
-| 1.4 | `HostCtx` bundle (**D20**) + full mock-bundle test | ⬜ |
+| 1.4 | `HostCtx` bundle (**D20**) in new `crates/infinity-host` + accessor/parts tests | ✅ |
 | 1.5 | MCP HTTP/SSE — already implemented upstream; added an SSE test | ✅ |
 
 ---
@@ -148,3 +148,4 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | 2026-11-17 | 1.1 | `sandbox-core` gained `executor`: portable `SandboxExecutor` (cfg-gated `Send`), `ExecRequest`/`ExecOutput`, and native `ProcessSandboxExecutor` with path confinement. 3 tests, including object-safety through `Box<dyn SandboxExecutor>`. |
 | 2026-11-17 | 1.5 | No implementation work needed — `HttpMcpTransport` already does Streamable HTTP + SSE. Added a test with a fake loopback server covering SSE parsing and `mcp-session-id` capture. |
 | 2026-11-17 | 1.2/1.3 | **Deferred to Phase 3/4** (D19): the flows already exist as `AgentSystem::step` / `SessionManager`; extracting traits now would guess the shape and refactor untestable AWS/daemon code. |
+| 2026-11-17 | 1.4 | New fork-only crate `infinity-host` (D20) exposing `HostCtx<C,S,H,T,E>` + optional MCP factory; default-on `native` feature forwards to `sandbox-core`/`infinity-mcp-bridge`. Gate now covers 8 crates. Tests: capability access, optional MCP, `into_parts`. |
