@@ -13,6 +13,11 @@ use crate::SyncError;
 use crate::types::{SessionId, SyncEvent};
 
 /// A local, ordered event log.
+///
+/// `async fn` in a public trait cannot express an auto-trait bound, which is
+/// deliberate here: the browser backend will have to return `!Send` futures
+/// (D27), so pinning `Send` now would block it.
+#[allow(async_fn_in_trait, reason = "Send would block the browser backend (D27)")]
 pub trait EventStore {
     /// Appends an event. Re-appending the same `event_id` is a no-op, which is
     /// what makes a retried push safe.

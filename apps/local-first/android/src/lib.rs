@@ -213,6 +213,96 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
     })
 }
 
+/// One sync round-trip: write a phone event, push it, then pull everything the
+/// relay has for the session. Mirrors what the CLI does for the laptop.
+#[cfg(target_os = "android")]
+async fn sync_probe(dir: &std::path::Path) -> Result<serde_json::Value, String> {
+    use infinity_sync::http::HttpTransport;
+    use infinity_sync::{
+        now_ms, CursorStore, DeviceId, EventKind, EventStore, FileEventStore, SessionId, SyncEvent,
+    };
+
+    let raw = std::fs::read_to_string(dir.join("sync-config.json"))
+        .map_err(|error| format!("read sync-config.json: {error}"))?;
+    let config: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+
+    let relay = config
+        .get("relay_url")
+        .and_then(|value| value.as_str())
+        .ok_or("sync-config.json needs a relay_url")?;
+    let device = DeviceId::new(
+        config
+            .get("device_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("android"),
+    );
+    let session = SessionId::new(
+        config
+            .get("session")
+            .and_then(|value| value.as_str())
+            .unwrap_or("s1"),
+    );
+
+    let root = dir.join("sync");
+    let store = FileEventStore::new(&root);
+    // Reuse the app's portable TLS client: reqwest's default stack stalls on
+    // Android (D21), and the sync probe must not repeat that bug.
+    let transport = HttpTransport::with_client(
+        portable_http_client()?,
+        relay.to_string(),
+    );
+
+    let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+    let event = SyncEvent::new(
+        session.clone(),
+        device.clone(),
+        seq,
+        EventKind::UserMessage,
+        serde_json::json!({ "text": "hello from android", "at": now_ms() }),
+    );
+    store.append(&event).await.map_err(|e| e.to_string())?;
+    let pushed = transport
+        .push(std::slice::from_ref(&event))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let cursors = CursorStore::new(&root, &device);
+    let after = cursors
+        .load()
+        .await
+        .map_err(|e| e.to_string())?
+        .get(session.as_str())
+        .copied()
+        .unwrap_or(0);
+    let stored = transport
+        .pull(&session, after)
+        .await
+        .map_err(|e| e.to_string())?;
+    for item in &stored {
+        store.append(&item.event).await.map_err(|e| e.to_string())?;
+    }
+    let highest = stored.iter().map(|item| item.position).max().unwrap_or(after);
+    cursors
+        .set(&session, highest)
+        .await
+        .map_err(|e| e.to_string())?;
+    let local_events = store
+        .events_since(&session, 0)
+        .await
+        .map_err(|e| e.to_string())?
+        .len();
+
+    Ok(serde_json::json!({
+        "device": device.as_str(),
+        "session": session.as_str(),
+        "pushed": pushed.accepted,
+        "fetched": stored.len(),
+        "position": highest,
+        "local_events": local_events,
+    }))
+}
+
 /// Entry point shared by the desktop binary and the mobile library.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -365,6 +455,25 @@ pub fn run() {
                             }
                         };
                         let _ = std::fs::write(dir.join("chat.json"), payload);
+                    }
+
+                    // Session sync: opt-in via sync-config.json, which carries the
+                    // relay URL and this device's id (never baked into the APK).
+                    if dir.join("sync-config.json").exists() {
+                        // Never let a stuck handshake keep the result file from
+                        // being written.
+                        let outcome = tokio::time::timeout(
+                            std::time::Duration::from_secs(45),
+                            sync_probe(&dir),
+                        )
+                        .await
+                        .unwrap_or_else(|_| Err("sync probe timed out after 45s".to_string()));
+                        let payload = match outcome {
+                            Ok(value) => serde_json::to_string_pretty(&value)
+                                .unwrap_or_else(|error| format!("{{\"error\":\"{error}\"}}")),
+                            Err(error) => serde_json::json!({ "error": error }).to_string(),
+                        };
+                        let _ = std::fs::write(dir.join("sync.json"), payload);
                     }
                 });
             });

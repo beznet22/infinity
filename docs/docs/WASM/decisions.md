@@ -240,6 +240,16 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - New fork crate holding the wire types, the `EventStore` contract, the file store and per-device cursors.
 - **Native-only for now:** a browser store is blocked by D27 (`?Send` propagation), not by storage choice. The crate deliberately excludes HTTP so the transport stays a separate seam (dev relay now, Worker later).
 
+## D34 — Cloudflare deployment and the e2e findings ✅
+- **Deployed:** Worker `local-first-sync` → `https://local-first-sync.beznet22.workers.dev`, D1 `local-first-sync` in **WEUR** (`database_id a23fb167-d10c-4100-93cb-c76e09f4380a`). Schema applied with `wrangler d1 execute --remote`; credentials come from `apps/.env` (git-ignored) and were never printed or committed.
+- **Propagation:** the first push after `wrangler deploy` returned Cloudflare `404 / error 1042`; the same request succeeded seconds later. Deployments are not instantly routable — retry rather than assume a broken route.
+- **Android TLS recurrence (D21):** the sync transport built its own reqwest client, which on Android goes through `rustls-platform-verifier` and **stalls**. Fixed by adding `HttpTransport::with_client` and passing the app's portable (compiled-in roots) client. Any new HTTP path on Android must reuse that client.
+- **Android result:** `pushed 1, fetched 3, position 3` against the deployed Worker.
+- **Browser result:** wa-sqlite 3.44.0 + `AccessHandlePoolVFS` over OPFS, `before 0 → after 8`, `devices: browser,laptop,android`, and a reload kept 8 rows while fetching only 1 new one (`persistence: PASS (8 → 9)`).
+- **wa-sqlite 1.0.0 API facts (all cost a cycle to learn):** `libversion` is a **function** (not a string); VFS modules export **classes**, not `create()` factories (`new AccessHandlePoolVFS(dir)`, then `await vfs.isReady`, then `vfs_register(vfs, true)`); the package ships `AccessHandlePoolVFS` and an async OPFS VFS but **no `OPFSCoopSyncVFS`**; inserts go through `sqlite3.run(db, sql, params)` — the `exec({ bind })` form does not exist.
+- **Build script:** the Android build recipe now lives in `scripts/build-apk.sh`, which validates `JAVA_HOME` (a stale `/opt/android-studio/jbr` was overriding a working JDK), sets the NDK linker env (otherwise cargo falls back to `cc`), and `cd`s to its own directory (running it from another cwd made pnpm look for a manifest in the root checkout).
+- **One session, three devices:** the same `cloud1` session is readable from the CLI, the phone, and the browser, with each device pushing its own events and pulling the rest.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

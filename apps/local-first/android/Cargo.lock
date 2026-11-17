@@ -2146,6 +2146,7 @@ dependencies = [
  "infinity-host",
  "infinity-provider-protocol",
  "infinity-provider-rig",
+ "infinity-sync",
  "rap-client",
  "reqwest",
  "rig-core",
@@ -2196,6 +2197,19 @@ dependencies = [
  "futures-util",
  "infinity-provider-protocol",
  "rig-core",
+]
+
+[[package]]
+name = "infinity-sync"
+version = "0.2.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3668,6 +3682,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",

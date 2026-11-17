@@ -36,6 +36,19 @@ impl HttpTransport {
         })
     }
 
+    /// Build a transport around an existing client.
+    ///
+    /// Required on Android: reqwest's default TLS stack routes through
+    /// `rustls-platform-verifier`, whose Android backend stalls the handshake
+    /// unless it was initialized (see the fork's D21). Hosts pass a client built
+    /// from compiled-in roots instead.
+    pub fn with_client(client: reqwest::Client, base_url: impl Into<String>) -> Self {
+        Self {
+            base_url: base_url.into().trim_end_matches('/').to_string(),
+            client,
+        }
+    }
+
     /// Push events. Retrying is safe: the relay ignores ids it already has.
     pub async fn push(&self, events: &[SyncEvent]) -> Result<PushAck, SyncError> {
         if events.is_empty() {
