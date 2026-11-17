@@ -3,7 +3,9 @@
 Living **status** tracker (the *spec* is [`implementation-plan.md`](./implementation-plan.md)).
 Legend: ✅ done · 🔶 in progress · ⬜ pending · 🚫 blocked.
 
-Docs: [`overview.md`](./overview.md) blueprint · [`audit.md`](./audit.md) claim-by-claim audit · [`decisions.md`](./decisions.md) D1–D17 recorded (D18–D21 planned in the implementation plan) · [`implementation-plan.md`](./implementation-plan.md) Phases 0–4 chunk spec · evidence note `.kimchi/docs/wasm-overview-external-verification.md`.
+Docs: [`HANDOFF.md`](./HANDOFF.md) **consumer-app integration and remediation guide** · [`overview.md`](./overview.md) blueprint · [`audit.md`](./audit.md) claim-by-claim audit · [`decisions.md`](./decisions.md) D1–D64 · [`implementation-plan.md`](./implementation-plan.md) original chunk spec · evidence note `.kimchi/docs/wasm-overview-external-verification.md`.
+
+> The original phase rows below record stages of implementation, not a single finished product. Follow the later decisions and chunk log for the latest state. In particular, durable core model context, stable session identity, an integrated browser driver, and a working desktop GUI are **not** completed; the handoff identifies these as required target-app work.
 
 **Branch:** `feat/wasm-android-hybrid` in the git worktree `../infinity-hybrid` (overview §1). The root checkout stays on `main`.
 
@@ -37,9 +39,9 @@ Chunk IDs below are authoritative from `implementation-plan.md`; where reality d
 |---|---|---|---|
 | 0 | 0.1–0.8 | WASM readiness (W1–W10 + CI gate) | ✅ complete — gate now covers 9 crates (7 at exit) |
 | 1 | 1.1–1.5 | Core adapter traits + `HostCtx` (D20) | ✅ complete — 1.2/1.3 deferred (D19) |
-| 2 | 2.1–2.5 | Consumer archetype: Android Tauri app | ✅ complete — device-verified (2.1–2.3, 2.2b, 2.4–2.5) |
-| 3 | 3.1–3.4 | Browser runtime (`crates/infinity-wasm`) | 🔶 3.1 + timer landed; 3.2–3.4 pending |
-| 4 | 4.1–4.3 | `infinity-remote-adapters` + worker archetype + optional relay (D21) | ⬜ |
+| 2 | 2.1–2.5 | Android reference probes and UI | ✅ mechanisms verified on device; production core/session driver unfinished |
+| 3 | 3.1–3.5 | Wasm model turns, durable stores, OPFS UI and tool probes | 🔶 individual mechanisms verified; integrated stable-session browser runtime unfinished |
+| 4 | 4.1–4.3 | Optional sync/relay and edge adapters | 🔶 local Worker/D1 relay verified and deleted; remote edge adapters and public deployment not implemented |
 
 Promoted decisions (recorded in the plan, echoed into `decisions.md` when each chunk starts): **D18 `SliceTimer`** (chunk 0.5) · **D20 `HostCtx`** (chunk 1.4) · **D21 optional edge relay** (chunk 4.3).
 
@@ -77,7 +79,7 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 
 ---
 
-## 5. Phase 2 — Consumer Archetype: Android Tauri App ✅ COMPLETE
+## 5. Phase 2 — Android reference mechanisms ✅ (production runtime unfinished)
 
 Every row was verified on a real device (Android 13, arm64-v8a), headlessly, with
 no UI interaction — `adb` plus probe files in the app's data dir.
@@ -89,24 +91,23 @@ no UI interaction — `adb` plus probe files in the app's data dir.
 | 2.2b | Real model turn over HTTPS (Kimchi, `gemma-4-31b`) | ✅ — `chat.json`; found and fixed a silent TLS hang (D21) |
 | 2.3 | Kotlin plugin: contacts + Shizuku probe; notifications via the official plugin | ✅ — 1064 contacts, notification in `dumpsys`, Shizuku absent (compile-only) |
 | 2.4 | WhatsApp WebView prototype — **allowed to fail** | ✅ technically — client boots, QR renders, live in a hidden view (D24) |
-| 2.5 | WhatsApp automation: pairing by phone number, state/read/send (dry-run default) | ✅ implemented + partially verified — session persists, 21 chat rows, 23 messages read over CDP; in-app read retry and first send still open (D25/D26) |
+| 2.5 | WhatsApp automation: pairing by phone number, state/read/send (dry-run default) | ✅ read retry and state verified; one **user-approved real delivery via direct CDP**, not the plugin command. Plugin send verification and exact-recipient defenses remain open (D64) |
 
-**Phase 2 exit evidence:** sandbox probe, model turn, contacts/notification/Shizuku probes, WhatsApp view + pairing. Failures worth keeping: a silent TLS stall, a missing sandbox cwd, and my own rebuild-during-linking mistake (D26).
+**Phase 2 evidence:** sandbox probe, real model turn, contacts/notification/Shizuku probes, WhatsApp view + pairing, foreground/lease-aware queue-driving probe, SQLite UI edits. Failures worth keeping: a silent TLS stall, a missing sandbox cwd, a rebuild-during-linking mistake, and a composer-focus bug (D26/D64). Core model conversation/state remains in-memory and the desktop host is blocked by a plugin type mismatch; see `HANDOFF.md` §3–§6 before reuse.
 
 ---
 
 ## 6. Phase 3 — Browser Runtime (`crates/infinity-wasm`) 🔶 IN PROGRESS
 
-Sequence was re-ordered after the timer research: the timer and storage come
-first because nothing else can run on the web target without them.
+The individual pieces were verified in subsequent E2E work, but they remain separate experiments until a stable-session browser driver unifies them (see `HANDOFF.md` §7).
 
 | Chunk | Deliverable | Status |
 |---|---|---|
 | 3.1 | Crate scaffold, workspace member, gate entry | ✅ — `crates/infinity-wasm`; wasm gate now covers 9 crates |
 | 3.2 | `SliceTimer` over `wasmtimer` 0.4 (boxed future, no `async_trait`) | ✅ — 4 tests pass natively; wasm build green |
-| 3.3 | SQLite-Wasm + OPFS stores (D28) | ⛔ blocked on `?Send` propagation (D27); **engine proven** in `apps/browser-storage-spike` (persistence PASS) |
-| 3.4 | `wasm-bindgen` JS API + `wasm-pack build` + demo page | ⬜ |
-| 3.5 | Wasm sandbox (`wasmi` 1.0.9) + size budget | ⬜ |
+| 3.3 | Durable core state/history and OPFS display log | ✅ actor-handle IndexedDB stores and dedicated-worker OPFS each survived reload; **not unified into a stable-session UI** (D38/D39/D62) |
+| 3.4 | `wasm-bindgen` JS API, `wasm-pack`, demo and browser model turns | ✅ mock and real provider proof; own session/thread identity still to integrate (D35–D37) |
+| 3.5 | Browser Worker isolation, Android wasmi and size gates | ✅ independent tool executors and budgets verified (D55/D56/D58); actual tool-registry connection remains open |
 
 Folded in from the original plan: wasmsh/OPFS/SharedWorker land with 3.5, since a
 sandbox and a coordinator are only meaningful once the runtime can sleep, store
@@ -114,13 +115,13 @@ and be called from JS.
 
 ---
 
-## 7. Phase 4 — Cloudflare Worker + Optional Relay ⬜
+## 7. Phase 4 — Local relay reference ✅ / production edge ⬜
 
 | Chunk | Deliverable | Status |
 |---|---|---|
-| 4.1 | `crates/infinity-remote-adapters` (DO slice runner, SQLite stores, DO alarms, Sandbox SDK, MCP relay) | ⬜ |
-| 4.2 | Worker archetype (`apps/cloudflare-worker`, consumer-side) | ⬜ |
-| 4.3 | Optional browser relay (**D21**) + self-hosted-daemon alternative documented | ⬜ |
+| 4.1 | `crates/infinity-remote-adapters` (DO slice runner, stable edge stores, DO alarms, Sandbox SDK, MCP relay) | ⬜ not implemented |
+| 4.2 | Worker archetype | ✅ local reference at `apps/local-first/worker`; token auth, atomic stale-fence writes and typecheck verified (D57), but user namespacing/rate limits are incomplete |
+| 4.3 | Optional relay | ✅ local sync/cursor/watch experiments (D31–D34, D52); intentionally **no public deployment**, no integrated browser relay path, no Web Push wake |
 
 ---
 
@@ -130,11 +131,11 @@ and be called from JS.
 |---|---|---|
 | `cargo check --target wasm32-unknown-unknown` (core set) | **7 green / 0 expected-red** — verified in the worktree | all 7 green (Phase 0 exit) — **reached** |
 | `bash scripts/check-wasm.bash` | ✅ **green** — pins the expected state: fails if a green crate regresses or a red crate turns green unnoticed | stays green while `EXPECTED_RED` shrinks |
-| `check.bash` | wasm step **added**; the suite still aborts at the `jj` prerequisite in this dev env (pre-existing), so the step is exercised directly via the script above | runnable in CI |
+| `check.bash` | ✅ exits 0 in the recorded E1 run, explicitly skipping unavailable optional prerequisites/tools (D41) | stay green; distinguish skips from executed tests |
 | Native build (`cargo check --workspace --all-targets`) | ✅ **green** after the trait cfg-split (axum `Send` preserved) | stays green after every Phase 0/1 change |
 | Native tests | `cargo test -p rap-protocol -p rap-client` ✅ green; full suite not yet run (same `jj` prerequisite) | green baseline, held after every change |
 | Feature preservation (original overview) | **100% mapped** — verified (`audit.md` Appendix A) | stays 100% through any doc change |
-| Cloud-optional regression | Not applicable yet (no code) | worker undeployed ⇒ Phases 0–3 work (Phase 4 exit) |
+| Cloud-optional regression | Local foundations and mock/real device/browser turns work with the relay deleted | target app must preserve local-only operation; external credentials and enabled CORS remain provider prerequisites |
 
 ---
 
@@ -215,3 +216,4 @@ and be called from JS.
 | 2026-11-17 | I2 | Browser page over OPFS: worker-owned SQLite, JS `session_view`, shared renderer, commands as events. Headless Chrome: queue → `1 events in OPFS · 1 queued`; reload preserves it. |
 | 2026-11-17 | J1 | Cross-platform E2E script: desktop (queue/send/truncate/restore), browser (OPFS queue survives reload), Android (device probe with sandbox). `E2E PASS`. Shared-relay scenario still pending. |
 | 2026-11-17 | WA1 | WhatsApp automation verified: read retry works (29 messages), dry-run types into the composer, and a real user-requested message was sent to GreatLover via CDP (1,288 chars, confirmed recipient and history). Fixed hangs on missing rows and the composer focus bug. |
+| 2026-11-17 | handoff | Added `HANDOFF.md`: consumer-target integration map, exact stable-thread/durable-core seams, platform repair checklists and acceptance matrix. Research identified prototype defects that the receiving app must not copy; no runtime fix is claimed in this docs-only revision. Baseline re-run: 36 sync + 4 sandbox tests, JS view parity and Worker typecheck pass. Desktop plugin emits the documented `E0107` errors. Updated stale phase summaries and timer notes. |

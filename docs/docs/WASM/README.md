@@ -1,12 +1,13 @@
 # WASM fork — working docs
 
-Documentation for forking Infinity into a hybrid runtime (on-device Android + in-browser WASM, with an optional Cloudflare edge). Start with the blueprint.
+Documentation for forking Infinity into a hybrid runtime (on-device Android + in-browser WASM, with an optional Cloudflare edge). For use in another consumer application, start with the handoff, which distinguishes verified seams from prototype-only behavior and required integration fixes.
 
 | Document | Purpose |
 |---|---|
+| [`HANDOFF.md`](./HANDOFF.md) | **Start here for a desktop/web/Android consumer app**: reusable APIs, reference-source map, required integration fixes, target runbooks, security constraints and an acceptance matrix. |
 | [`overview.md`](./overview.md) | The fork blueprint (§1–§10): worktree strategy, core pillars, Android/Tauri architecture, trait adapters, reference repos, layout, build order, WASM toolchain, readiness analysis, design ideas. |
 | [`audit.md`](./audit.md) | Claim-by-claim audit of the original overview (53 rows / 54 verdicts), feature-preservation map, Appendix C (compiler-verified wasm readiness). |
-| [`decisions.md`](./decisions.md) | Decisions D1–D18 with options, rationale and rejected alternatives. |
+| [`decisions.md`](./decisions.md) | Decisions D1–D64 with options, evidence, limitations and rejected alternatives; later entries supersede earlier “next step” text. |
 | [`implementation-plan.md`](./implementation-plan.md) | Phase 0–4 chunk spec (what to build, in what order, with acceptance criteria). |
 | [`PROGRESS.md`](./PROGRESS.md) | Living status tracker: what is done, what is next, gate states. |
 
@@ -92,12 +93,12 @@ Any new implementation must use the matching attribute pair, or it fails with `E
 impl Tool<M> for MyTool { /* ... */ }
 ```
 
-### 4. No socket, no process, no clock (yet)
+### 4. No socket or process; native filesystem and timer APIs are not browser implementations
 
 - A browser cannot bind a socket: `rap_client::callback_server` is gated to native. In-browser callback ingestion is an in-page seam (implementation plan chunk 3.3).
-- `std::fs` and `tokio::time` **compile** for wasm but fail at runtime (`std::fs` always errors; tokio timers panic on this target). `SliceTimer` (decision D18) is the Phase 3 replacement — until it lands, do not invoke `TokioSleepTool` / `TokioSleepUntilTool` / `SleepUntilEventOrInputTool` in a browser.
+- `std::fs` and `tokio::time` **compile** for wasm but fail at runtime (`std::fs` always errors; tokio timers panic on this target). `SliceTimer` over `wasmtimer` and the provider retry path now use browser-compatible waits (D18/D37). These paths are not a blanket implementation of every Tokio sleep tool; test any additional timer use rather than inferring safety from compilation.
 - `std::thread::spawn` panics; the wasm runtime is current-thread only.
-- `McpTool::execute` delivers results through `tokio::task::spawn_local` on wasm. The surrounding runtime must therefore run inside a `tokio::task::LocalSet`; calling it outside one panics. This is wired up with the browser runtime in Phase 3.
+- `McpTool::execute` delivers results through `tokio::task::spawn_local` on wasm. The surrounding runtime must therefore run inside a `tokio::task::LocalSet`; calling it outside one panics. The browser runtime uses this arrangement.
 
 ---
 
