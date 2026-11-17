@@ -3,8 +3,9 @@
 //! Everything below is the fork's own code — `AgentSystemBuilder`, the local
 //! driver, the thread API and the provider trait — compiled to
 //! `wasm32-unknown-unknown`. Two providers are offered: a deterministic mock
-//! (no network) and OpenRouter (which allows browser CORS, so a key can be
-//! injected at runtime without a proxy).
+//! (no network) and a generic **OpenAI-compatible** provider, so any endpoint
+//! that speaks `/chat/completions` works (OpenAI, OpenRouter, Kimchi, a local
+//! server) as long as it allows browser CORS.
 
 use std::sync::Arc;
 
@@ -21,7 +22,6 @@ use wasm_bindgen::prelude::*;
 /// The text the stand-in model produces. The page asserts on this value.
 const MOCK_REPLY: &str = "infinity-wasm-turn-ok";
 const MOCK_MODEL_ID: &str = "mock-echo";
-const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -51,14 +51,25 @@ impl ModelProvider for MockProvider {
     }
 }
 
-/// Talks to OpenRouter's OpenAI-compatible endpoint from the browser.
+/// Talks to any OpenAI-compatible endpoint from the browser.
 ///
-/// The key is passed in at call time and only ever lives in memory on this
-/// page; it is never bundled, logged, or persisted by this crate.
-struct OpenRouterProvider {
+/// Base URL, key and model all arrive at call time and only live in memory on
+/// this page; nothing is bundled, logged, or persisted by this crate. Providers
+/// that do not send CORS headers cannot be used directly — they need a relay
+/// (see the Worker archetype).
+struct OpenAiCompatibleProvider {
+    base_url: String,
     api_key: String,
     model: String,
     client: reqwest::Client,
+}
+
+impl OpenAiCompatibleProvider {
+    /// `/chat/completions` appended to the caller's base URL, with the trailing
+    /// slash normalised so `…/v1` and `…/v1/` behave the same.
+    fn endpoint(&self) -> String {
+        format!("{}/chat/completions", self.base_url.trim_end_matches('/'))
+    }
 }
 
 fn render_user(content: &[UserContent]) -> String {
@@ -85,7 +96,7 @@ fn render_assistant(content: &[AssistantContent]) -> String {
 }
 
 #[async_trait]
-impl ModelProvider for OpenRouterProvider {
+impl ModelProvider for OpenAiCompatibleProvider {
     async fn list_models(&self) -> Result<Vec<ModelEntry>, BoxError> {
         Ok(vec![ModelEntry {
             model_id: self.model.clone(),
@@ -128,10 +139,11 @@ impl ModelProvider for OpenRouterProvider {
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         let client = self.client.clone();
         let api_key = self.api_key.clone();
+        let endpoint = self.endpoint();
         wasm_bindgen_futures::spawn_local(async move {
             let outcome = async {
                 let response = client
-                    .post(OPENROUTER_URL)
+                    .post(&endpoint)
                     .bearer_auth(&api_key)
                     .json(&body)
                     .send()
@@ -225,17 +237,22 @@ pub async fn run_smoke_turn(prompt: String) -> Result<String, JsValue> {
         .map_err(|error| JsValue::from_str(&error))
 }
 
-/// Run one real turn against OpenRouter.
+/// Run one real turn against any OpenAI-compatible endpoint.
 ///
-/// `api_key` must be supplied by the host at runtime; nothing is bundled.
+/// `base_url` is the API root without `/chat/completions` (e.g.
+/// `https://api.openai.com/v1`, `https://openrouter.ai/api/v1`,
+/// `https://llm.kimchi.dev/openai/v1`). The key is supplied by the host at
+/// runtime and never bundled.
 #[wasm_bindgen]
-pub async fn run_openrouter_turn(
+pub async fn run_openai_compatible_turn(
+    base_url: String,
     api_key: String,
     model: String,
     prompt: String,
 ) -> Result<String, JsValue> {
     console_error_panic_hook::set_once();
-    let provider = OpenRouterProvider {
+    let provider = OpenAiCompatibleProvider {
+        base_url,
         api_key,
         model: model.clone(),
         client: reqwest::Client::new(),

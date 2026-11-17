@@ -271,6 +271,29 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Where the bytes go** (pre-bindgen release artifact, 5,820,847 B): `.rodata` 1,267,594 (21.8%), name section 657,334 (11.3%, stripped in the package), `__wasm_bindgen_unstable` 284,189 (4.9%), **Rhai** packages/parser ≈ 190 KB visible plus its `.rodata` share, `chrono-tz` tables 22,781, `infinity_agent_core::run_completion` 27,935, remainder spread over 8,803 items.
 - **Next size lever:** Rhai and `chrono-tz` are the only clearly removable contributors. If the browser never evaluates Rhai scripts or formats timezones, gating them behind a feature is worth more than another `-Oz` pass (which buys ~4%).
 
+## D36 — Generic OpenAI-compatible browser provider, and all-platform sizes ✅ / ⏸️
+- **Provider:** the hardcoded OpenRouter client became `OpenAiCompatibleProvider(base_url, api_key, model)`; the export is `run_openai_compatible_turn(base_url, api_key, model, prompt)`. `…/chat/completions` is appended to the caller's base URL, so OpenAI (`https://api.openai.com/v1`), OpenRouter (`https://openrouter.ai/api/v1`), Kimchi (`https://llm.kimchi.dev/openai/v1`) and local servers all work. D35's `run_openrouter_turn` is superseded.
+- **Verified in the browser:** the mock turn still passes (`infinity-wasm-turn-ok`, mode `mock`).
+- **Not yet verified with a real endpoint — three concrete blockers, measured:**
+  1. `panicked at std/time/...: time not implemented on this platform` — something on the real-path turn calls `std::time` (likely request timing), which `wasm32-unknown-unknown` does not implement.
+  2. `js-sys ... RefCell already borrowed` in `futures/task/singlethread.rs` — a reentrancy panic from polling a JS-backed future inside `spawn_local`; the bridge must not re-enter the same `JsFuture`.
+  3. OpenRouter answered **429** for the free model used (`inclusionai/ling-3.2-flash:free`), so the test also needs a non-throttled model.
+  These are the browser analogues of N1/N2 in the wasm plan: `std::time` and single-threaded future reentrancy, not provider logic.
+- **All-platform sizes (measured, release unless noted):**
+
+| Target | Artifact | Raw | Stripped | gzip |
+|---|---|---|---|---|
+| CLI (fork agent) | `target/release/infinity` | 26,289,856 | 20,896,328 | 8,617,892 |
+| CLI (app sync) | `apps/local-first/.../local-sync` | 7,503,696 | 6,159,688 | 2,757,516 |
+| Wasm | `infinity_wasm_bg.wasm` + JS | 3,920,352 + 31,828 | — | 1,029,467 |
+| Wasm (debug, reference) | same | 9,149,331 | — | 2,103,705 |
+| Android release APK | `app-universal-release-unsigned.apk` | 27,502,271 | — | — |
+| Android debug APK | `app-universal-debug.apk` | 523,872,165 | — | — |
+
+- **Android APK composition (release, arm64 only):** native `.so` **25,836,608 B (94%)**, dex 735,410, resources 259,547, other 570,928. The `.so` is stored, not compressed, so the APK is dominated by Rust code. The debug APK is 19× larger because of symbols and all ABIs — never quote it as the app size.
+- **`infinity-wasm` is 3.9 MB raw / 1.03 MB gzip**, of which reqwest added +326 KB / +137 KB; Rhai and chrono-tz remain the largest removable contributors (D35).
+- **Build script:** `scripts/build-apk.sh [target] [debug|release]`; Tauri treats release as the default, so only `--debug` is a flag.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

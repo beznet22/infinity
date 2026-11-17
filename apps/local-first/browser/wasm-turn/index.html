@@ -3,18 +3,19 @@
 <title>infinity-wasm turn</title>
 <pre id="out">running…</pre>
 <script type="module">
-  import init, { run_smoke_turn, run_openrouter_turn } from "./pkg/infinity_wasm.js";
+  import init, { run_smoke_turn, run_openai_compatible_turn } from "./pkg/infinity_wasm.js";
   const out = document.getElementById("out");
   try {
     await init();
-    // The host injects this before the page loads; nothing is bundled.
-    const key = window.__openrouterKey;
-    const reply = key
-      ? await run_openrouter_turn(key, "inclusionai/ling-3.2-flash:free",
+    // The host injects `window.__llm = { baseUrl, apiKey, model }` before load.
+    const llm = window.__llm;
+    const reply = llm && llm.apiKey
+      ? await run_openai_compatible_turn(
+          llm.baseUrl, llm.apiKey, llm.model,
           "Reply with exactly: infinity-browser-openrouter-ok")
       : await run_smoke_turn("hello from the browser");
     out.textContent = "reply: " + reply;
-    window.__turnResult = { ok: true, mode: key ? "openrouter" : "mock", reply };
+    window.__turnResult = { ok: true, mode: llm && llm.apiKey ? "provider" : "mock", reply };
   } catch (error) {
     out.textContent = "error: " + error;
     window.__turnResult = { ok: false, error: String(error) };

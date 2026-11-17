@@ -2,7 +2,7 @@
 # Build a debug APK. Encapsulates the NDK environment so callers never have to
 # reproduce the env-var set (and never silently fall back to `cc`).
 #
-#   scripts/build-apk.sh [aarch64|x86_64]
+#   scripts/build-apk.sh [aarch64|x86_64] [debug|release]
 set -euo pipefail
 
 # Run from the app directory regardless of where the script is invoked from:
@@ -10,6 +10,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TARGET="${1:-aarch64}"
+MODE="${2:-debug}"
+# Tauri treats release as the default: only `--debug` is a flag.
+MODE_FLAG=""
+[[ "$MODE" == "debug" ]] && MODE_FLAG="--debug"
 NDK="${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk/29.0.13113456}"
 TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
 API=24
@@ -31,4 +35,4 @@ exec env \
   "CXX_${TARGET}-linux-android=$CC_BIN++" \
   "AR_${TARGET}-linux-android=$TC/bin/llvm-ar" \
   "CARGO_TARGET_$(echo "$TARGET" | tr '[:lower:]' '[:upper:]')_LINUX_ANDROID_LINKER=$CC_BIN" \
-  pnpm tauri android build --debug --apk --target "$TARGET" --ci
+  pnpm tauri android build $MODE_FLAG --apk --target "$TARGET" --ci
