@@ -349,6 +349,12 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
   `laptop guard` → `{"acquired":true,"holder":"laptop"}`; `phone guard` → `{"acquired":false,"holder":"laptop"}`; `laptop unguard` → released; `phone guard` → `{"acquired":true,"holder":"phone"}`.
 - **Remaining:** hosts must actually call it around a turn. The Android chat probe is the natural first consumer (it owns both an event store and a turn); until that wiring lands the guarantee is available but unused.
 
+## D43 — The first real turn takes the lease ✅
+- **Wiring:** the Android chat probe now claims the session (`android-chat`) before touching a model and releases it when the turn ends. The device id comes from `sync-config.json` at runtime, falling back to `android`; the log lives under the app data dir, so a pushed claim is visible to other devices.
+- **Verified on device — happy path:** `chat.json` → `{"reply":"infinity-on-android-llm","lease":"released"}`, and the event log shows exactly `lease_claim claim android` followed by `lease_claim release android`.
+- **Verified on device — refusal:** planting a foreign claim (`owner: laptop`, expiry +1 h) in the app's log made the next run return `{"reply":"","lease":"denied","notes":["another device holds this session"]}`. The model was **not** called, which is the actual guarantee.
+- **Known gap:** the probe uses the 60 s default TTL and a 45 s turn deadline, so it cannot expire mid-turn. Longer turns must call `guard.renew()` on their own heartbeat; that heartbeat is the remaining work before the lease is safe for arbitrarily long turns.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

@@ -113,6 +113,9 @@ struct ChatOutcome {
     notes: Vec<String>,
     /// Whether the turn was still running when the probe gave up.
     timed_out: bool,
+    /// `acquired`/`released` on a normal run, `denied` when another device holds
+    /// the session.
+    lease: String,
 }
 
 /// Builds an HTTP client whose TLS trust anchors are compiled into the binary.
@@ -146,6 +149,31 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
     let raw = std::fs::read_to_string(&config_path)
         .map_err(|error| format!("read {}: {error}", config_path.display()))?;
     let config: ChatConfig = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+
+    // One device per session: claim it before touching the model. The event log
+    // lives under the app's data dir, so the claim is visible to other devices
+    // once it is pushed.
+    let device = read_sync_device(dir);
+    let session = infinity_sync::SessionId::new("android-chat");
+    let lease_store = infinity_sync::FileEventStore::new(dir.join("sync"));
+    let guard = infinity_sync::LeaseGuard::acquire(
+        &lease_store,
+        session.clone(),
+        device,
+        infinity_sync::DEFAULT_TTL_MS,
+    )
+    .await
+    .map_err(|error| format!("lease: {error}"))?;
+
+    let Some(guard) = guard else {
+        return Ok(ChatOutcome {
+            model: config.model,
+            reply: String::new(),
+            notes: vec!["another device holds this session".to_owned()],
+            timed_out: false,
+            lease: "denied".to_owned(),
+        });
+    };
 
     // Kimchi (and OpenRouter) speak the OpenAI *chat completions* API, so build
     // rig's completions client rather than the Responses-API default. The
@@ -207,12 +235,33 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
         }
     }
 
+    guard
+        .release(&lease_store)
+        .await
+        .map_err(|error| format!("lease release: {error}"))?;
+
     Ok(ChatOutcome {
         model: config.model,
         reply,
         notes,
         timed_out,
+        lease: "released".to_owned(),
     })
+}
+
+/// Device id from `sync-config.json`, or a stable default.
+fn read_sync_device(dir: &std::path::Path) -> infinity_sync::DeviceId {
+    std::fs::read_to_string(dir.join("sync-config.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|config| {
+            config
+                .get("device_id")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_owned())
+        })
+        .map(infinity_sync::DeviceId::new)
+        .unwrap_or_else(|| infinity_sync::DeviceId::new("android"))
 }
 
 /// One sync round-trip: write a phone event, push it, then pull everything the
