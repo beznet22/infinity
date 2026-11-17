@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>SQLite + OPFS spike</title>
+<h1>SQLite-Wasm + OPFS</h1>
+<pre id="out">starting…</pre>
+<script type="module">
+  const out = document.getElementById("out");
+  const worker = new Worker("./worker.mjs", { type: "module" });
+  worker.onmessage = (event) => {
+    out.textContent = JSON.stringify(event.data, null, 2);
+    window.__spikeResult = event.data;
+  };
+  worker.onerror = (event) => {
+    out.textContent = "worker error: " + (event.message || "unknown");
+    window.__spikeResult = { error: event.message || "worker error" };
+  };
+</script>

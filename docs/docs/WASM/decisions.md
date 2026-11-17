@@ -193,6 +193,14 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Options for the refactor:** (a) propagate `?Send` through the core's async fns on wasm; (b) run the browser runtime inside a `LocalSet` and keep `Send` only where genuinely required; (c) `SendWrapper` — rejected, since it cannot fix `!Send` futures.
 - **Ordering:** Phase 4 (Cloudflare worker, `infinity-remote-adapters`) does not depend on browser storage and can proceed first.
 
+## D28 — SQLite-Wasm + OPFS is the browser storage target, and it was proven now ✅
+- **Question (user direction):** IndexedDB was the cheap default, but SQLite+OPFS is where the consuming browser app is going. Deferring it would have meant designing stores we already know will be replaced.
+- **Proven, not assumed:** a dedicated-worker spike (`apps/browser-storage-spike`) with `@sqlite.org/sqlite-wasm` 3.54.1-build1 in headless Chrome. First load inserted 100 rows; a reload read 100 and inserted 100 more — `persistence: PASS (100 → 200)`.
+- **Measured cost:** `sqlite3.wasm` is **879,084 B raw / 407,552 B gzip**; the JS API `index.mjs` is another 656,872 B. That is a real addition on top of `wasmi`'s ~1.16 MB, and it is the price of the storage model the app will actually use.
+- **Hard constraints:** `createSyncAccessHandle()` is exposed only in a **dedicated worker**; one writer per file, so multi-tab needs a SharedWorker electing an active tab; `navigator.storage.persist()` must be called from the main thread; OPFS is still quota-managed and can be cleared. Browser floor: Chrome 102+, Firefox 111+, Safari 15.2+ (sync handles) / 16.4+ (full OPFS).
+- **Consequence:** the browser store will be a `SqliteConversationStore`/`SqliteStateStore` behind the existing traits, not an IndexedDB one. The D27 `?Send` blocker applies to either engine: it is about JS handles and the core's `Send`-bound futures, not about storage choice.
+- **Rejected:** IndexedDB as the target engine (cheap, but the app would outgrow it); SQLite on the main thread or in a shared worker (API does not exist there); Asyncify builds (roughly double the wasm for no need here).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
