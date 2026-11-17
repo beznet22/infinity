@@ -217,6 +217,10 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Android-only capabilities (contacts, Shizuku). On desktop every command
+        // reports that it is unsupported instead of pretending to work.
+        .plugin(tauri_plugin_infinity_android::init())
+        .plugin(tauri_plugin_notification::init())
         // Run the probes once at startup and persist their results inside the
         // app's data dir. On a device they are readable without a UI round-trip:
         //   adb shell run-as run.hydro.infinityhybrid cat probe.json
@@ -235,6 +239,53 @@ pub fn run() {
                 }
             };
             let _ = std::fs::create_dir_all(&dir);
+
+            // Android-only capabilities: the Kotlin bridge (contacts, Shizuku) and
+            // the official notification plugin. Results go to `native.json` so a
+            // device run can be checked without touching the UI:
+            //   adb shell run-as run.hydro.infinityhybrid cat native.json
+            // It runs off the setup path because `count_contacts` may wait for a
+            // runtime permission answer, which must not block app startup.
+            #[cfg(target_os = "android")]
+            {
+                use tauri_plugin_infinity_android::InfinityAndroidExt;
+                use tauri_plugin_notification::NotificationExt;
+
+                let handle = app.handle().clone();
+                let dir = dir.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    let contacts = handle.infinity_android().count_contacts();
+                    let shizuku = handle.infinity_android().shizuku_status();
+                    let notification = handle
+                        .notification()
+                        .builder()
+                        .title("Infinity Hybrid")
+                        .body("on-device notification probe")
+                        .show();
+
+                    let payload = serde_json::json!({
+                        "contacts": match contacts {
+                            Ok(count) => serde_json::to_value(count)
+                                .unwrap_or(serde_json::Value::Null),
+                            Err(error) => serde_json::json!({ "error": error.to_string() }),
+                        },
+                        "shizuku": match shizuku {
+                            Ok(status) => serde_json::to_value(status)
+                                .unwrap_or(serde_json::Value::Null),
+                            Err(error) => serde_json::json!({ "error": error.to_string() }),
+                        },
+                        "notification": match notification {
+                            Ok(()) => serde_json::json!("shown"),
+                            Err(error) => serde_json::json!(format!("error: {error}")),
+                        },
+                    });
+                    let _ = std::fs::write(
+                        dir.join("native.json"),
+                        serde_json::to_string_pretty(&payload).unwrap_or_default(),
+                    );
+                });
+            }
 
             std::thread::spawn(move || {
                 let runtime = tokio::runtime::Builder::new_current_thread()

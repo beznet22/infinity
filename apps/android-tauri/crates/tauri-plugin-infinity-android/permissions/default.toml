@@ -1,0 +1,3 @@
+[default]
+description = "Enables counting contacts and probing Shizuku."
+permissions = ["allow-count-contacts", "allow-shizuku-status"]

@@ -78,7 +78,7 @@ Full-featured operation — **including long-running tasks — works with zero c
 | Notifications & Contacts | Android `NotificationListenerService` & `ContactsContract` | Tauri v2 Kotlin plugins (`app.tauri.plugin.Plugin` subclasses, `@Command` methods invoked from Rust via `run_mobile_plugin`); events pushed back through RAP `subscription_event` callbacks |
 | Files & App storage | Scoped Storage / MediaStore; Shizuku file bridge where privileged | `tokio::fs` inside the app sandbox; Kotlin plugin calls for shared external storage |
 | WhatsApp control | Embedded WebView with custom `WebViewClient` + JS injection | Rust tool sends DOM/action commands over Tauri IPC to the WebView and awaits scraped state or RAP callbacks *(untested design — highest-risk row, validate early)* |
-| Shell, sandbox & app control | Shizuku Binder IPC (adb/root-privileged system APIs via `app_process` middle-man) | Tauri Kotlin plugin executes privileged shell commands via Shizuku and streams stdout/stderr back. *Implementation-time checks:* `newProcess` / uiautomator / `am` surface in [Shizuku-API](https://github.com/RikkaApps/Shizuku-API); ADB permission limits and Android 9 hidden-API limits apply |
+| Shell, sandbox & app control | Wasm modules shipped as assets (no `exec` permission); Shizuku Binder IPC only for privileged escalation | Tools run in-process through `SandboxExecutor` by interpreting `.wasm` from app data (§3.1); Shizuku remains the optional path for privileged shell (`adb`/root via `app_process`), streaming stdout/stderr back. *Implementation-time checks:* `newProcess` / uiautomator / `am` surface in [Shizuku-API](https://github.com/RikkaApps/Shizuku-API); ADB permission limits and Android 9 hidden-API limits apply |
 | MCP & async tools (RAP) | Android network stack or local loopback HTTP server | Native RAP (connectionless HTTP POST + webhook callbacks) for hibernating async tasks **[today]**; MCP over HTTP/SSE for remote servers **[plan]** — the existing `McpTransport` is stdio-only, which cannot work in a browser or against remote servers |
 
 **Android runtime lifecycle** *(all steps are fork work; mechanics consistent with the verified slice/hibernation + RAP design)*:
@@ -87,6 +87,23 @@ Full-featured operation — **including long-running tasks — works with zero c
 2. **Wake & plan.** Infinity loads the thread from the thread store (JSON-file / DSQL today; Android store is a fork choice — see §2.3) and streams context to the provider over rustls.
 3. **Dispatch & hibernate.** When the model calls a tool (Shizuku UI tap, contacts query, WhatsApp reply), Infinity dispatches the call to the Tauri Kotlin bridge or a RAP endpoint and hibernates the in-memory task.
 4. **Resume & complete.** An Android Foreground Service keeps the process alive until the Kotlin plugin or RAP server posts the result back, waking the thread to finish streaming to the UI.
+
+### 3.1 Running real tools on device: two options, one measured cost **[plan]**
+
+The core needs to run commands (grep, git, python, formatters). On Android the obvious approach — ship a binary and execute it — is blocked by SELinux: since Android 10, an app targeting API 29+ cannot execute files in its writable data directory (`app_data_file:file execute` is denied). Two paths remain.
+
+**A. Execute from the native library directory.** Rename the executable to `lib<name>.so`, put it in `jniLibs/<abi>/`, and set `android:extractNativeLibs="true"` (AGP ≥ 3.6 defaults to *not* extracting). The installer then places it in `/data/app/…/lib/<abi>/`, labelled `apk_data_file`, which the app's own domain may execute; the app runs it from `context.getApplicationInfo().nativeLibraryDir`. It accepts any ELF — including a full Python or Node build — but each binary ships separately, needs `patchelf --set-rpath '$ORIGIN'` plus its shared libraries, and multiplies per ABI. Treat it as a fragile platform detail, not a stable feature.
+
+**B. Embed a Wasm engine and run `.wasm` from app data.** No `exec` permission is involved: the host reads the module bytes and interprets them — which is what a sandbox should be anyway. Measured here (aarch64-linux-android, release, `llvm-strip`) on an otherwise empty `cdylib`:
+
+| Build | Stripped size | Delta |
+|---|---|---|
+| Baseline cdylib | 308 KB | — |
+| + `wasmi` 1.x (`Engine` + `Module::new`) | 1.44 MB | **+1.16 MB** |
+
+`wasmi` is an interpreter: no JIT, no executable memory, deterministic, with fuel metering — the same metering the slice model wants. A JIT (`wasmtime`) is much larger (the official minimal C API build is 2.1 MB on x86_64 Linux, and the Rust crate is bigger) and its JIT pages were not validated on this device, so the interpreter is the default recommendation. Toolchains that must run unmodified ELF binaries keep option A as a fallback.
+
+**Decision:** option B is the default for on-device tools; option A is the escape hatch for binaries that cannot be compiled to Wasm (D23).
 
 ---
 

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-count-contacts"
+description = "Enables the count_contacts command without any pre-configured scope."
+commands.allow = ["count_contacts"]
+
+[[permission]]
+identifier = "deny-count-contacts"
+description = "Denies the count_contacts command without any pre-configured scope."
+commands.deny = ["count_contacts"]

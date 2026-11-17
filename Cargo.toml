@@ -25,7 +25,9 @@ members = [
 ]
 # Consumer archetypes are standalone projects, not workspace members (D16).
 # They carry their own `[workspace]` table; excluding them here keeps the
-# fork's workspace from trying to own them.
+# fork's workspace from trying to own them. Nested crates (the Android plugin
+# under `apps/android-tauri/crates/`) belong to the app's workspace, so the
+# fork never pulls a desktop `tauri` build.
 exclude = ["apps/android-tauri"]
 resolver = "2"
 

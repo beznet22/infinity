@@ -141,6 +141,21 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Consequence:** the platform trust store is bypassed, so user-installed and corporate CAs do not apply. This is the same posture as the browser target, where no OS store exists either. Apps that need private CAs must ship the AAR and initialize the verifier before the first request — recorded in `apps/android-tauri/README.md`.
 - **Verified:** `chat.json` → `{"model":"gemma-4-31b","reply":"infinity-on-android-llm","notes":[],"timed_out":false}`, ~10 s, and `cargo check --target aarch64-linux-android` clean.
 
+## D22 — The Android plugin lives under the app, not in `crates/` ✅
+- **Question:** `tauri-plugin-infinity-android` was scaffolded into `crates/`; should it stay there?
+- **Decision (user):** move it to `apps/android-tauri/crates/tauri-plugin-infinity-android`.
+- **Why:** it is an implementation detail of one archetype, not a crate the fork publishes. Inside the app it becomes a member of the app's own workspace, so it shares `target/` and `cargo fmt --all` instead of duplicating a build tree, and the fork's workspace never pulls a desktop `tauri` build (which would need `webkit2gtk` on Linux CI).
+- **Mechanics:** the app declares `path = "crates/tauri-plugin-infinity-android"`; the root `exclude` stays `["apps/android-tauri"]`; the generated `gen/android/tauri.settings.gradle` picks the Android library up automatically from the plugin's `build.rs` (`android_path("android")`).
+- **Verified:** `cargo metadata` lists both packages in the app workspace; APK rebuilt after the move; all three probes still pass on the device, and the Gradle settings file points at the new path.
+
+## D23 — On-device tools run as Wasm modules, not extracted executables ✅
+- **Question:** how do tools execute inside the Android app, given that Android 10+ denies `exec` on files in the app's writable data directory for apps targeting API 29+?
+- **Options:** (A) ship executables as `jniLibs/…/lib*.so` and execute them from `nativeLibraryDir` (executable because the directory is labelled `apk_data_file`), or (B) embed a Wasm engine and interpret `.wasm` read from app data.
+- **Decision:** B by default; A stays as the escape hatch for binaries that cannot be compiled to Wasm.
+- **Measured cost (aarch64-linux-android, release, `llvm-strip`, empty `cdylib`):** 308 KB baseline vs 1.44 MB with `wasmi` 1.x (`Engine` + `Module::new`) — **+1.16 MB**.
+- **Rejected as default:** `wasmtime` — the official minimal C API build is 2.1 MB, the Rust crate is larger, and its JIT pages were not validated on this device. `wasmi` is an interpreter: no executable memory, deterministic, and its fuel metering matches the slice model.
+- **Consequences:** (1) tools must be distributed as `.wasm`, so tools that need a real OS (git, package managers, preview servers) fall back to option A or to the optional edge; (2) executables shipped via option A still need `patchelf --set-rpath '$ORIGIN'` plus their shared libraries, which is documented in `apps/android-tauri/README.md`; (3) `SandboxExecutor` is the seam that keeps this choice out of the core.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

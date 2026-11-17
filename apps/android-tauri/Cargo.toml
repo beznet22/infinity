@@ -42,3 +42,10 @@ rig-core = { version = "0.31", default-features = false, features = ["reqwest-ru
 reqwest = { version = "0.13", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
 webpki-roots = "1"
+
+# Native Android capabilities that neither the browser nor the desktop can
+# provide. The plugin is excluded from the fork workspace: it needs `tauri` and
+# is only built from this app.
+tauri-plugin-infinity-android = { path = "crates/tauri-plugin-infinity-android" }
+# Notifications use the official plugin; Android 13+ needs POST_NOTIFICATIONS.
+tauri-plugin-notification = "2"

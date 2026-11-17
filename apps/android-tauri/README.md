@@ -68,6 +68,36 @@ with `.http_client(...)`.
 that method replaces the type parameter — pin it:
 `CompletionsClient::<reqwest::Client>::builder()`.
 
+## Running tools on Android
+
+Android 10+ denies `exec` on files in the app's writable data directory (for apps
+targeting API 29+), so `chmod +x ./tool && ./tool` fails with `EACCES`. Two paths
+remain:
+
+1. **Wasm modules (recommended).** Embed an interpreter and read `.wasm` from app
+data — no `exec` permission is involved at all, and fuel metering comes for free.
+Measured here on aarch64, release, stripped: 308 KB baseline → 1.44 MB with
+`wasmi` (**+1.16 MB**). Rationale and comparison in
+[`docs/docs/WASM/overview.md` §3.1](../../docs/docs/WASM/overview.md) and decision D23.
+2. **Executables from `nativeLibraryDir`.** Name the binary `lib<name>.so`, put it
+in `jniLibs/<abi>/`, set `android:extractNativeLibs="true"`, then execute
+`"$nativeLibraryDir/lib<name>.so"`. The installer extracts it into a directory
+labelled `apk_data_file`, which the app's own domain may execute. For real Rust
+binaries add `patchelf --set-rpath '$ORIGIN'` and ship every `.so` dependency;
+the payload grows per ABI.
+
+`/system/bin/sh` needs none of this — it lives on the system partition, which is
+executable — which is why the sandbox probe works out of the box.
+
+## Native capabilities
+
+The contacts and Shizuku commands come from the in-app plugin at
+[`crates/tauri-plugin-infinity-android`](crates/tauri-plugin-infinity-android/README.md).
+Notifications use the official `tauri-plugin-notification`. Everything is verified
+by [`scripts/device-probe.sh`](scripts/device-probe.sh), which installs, grants
+`READ_CONTACTS` + `POST_NOTIFICATIONS`, launches, and prints all probe files plus
+the `dumpsys notification` record.
+
 ## Headless debugging (no clicking)
 
 ```bash
