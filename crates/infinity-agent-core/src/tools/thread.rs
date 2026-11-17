@@ -16,7 +16,8 @@ pub struct SpawnThreadTool<C: ConversationStore> {
     pub conversation_store: C,
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<M: InputSender + 'static, C: ConversationStore + 'static> Tool<M> for SpawnThreadTool<C> {
     fn name(&self) -> &str {
         "spawn_thread"
@@ -223,7 +224,8 @@ pub struct ReportToParentTool<C: ConversationStore> {
     pub conversation_store: C,
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<M: InputSender + 'static, C: ConversationStore + 'static> Tool<M> for ReportToParentTool<C> {
     fn name(&self) -> &str {
         "report_to_parent"
@@ -349,7 +351,8 @@ pub struct CloseThreadTool<C: ConversationStore, H: HttpClient> {
     pub rap_notifier: Option<RapNotifier<H>>,
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<M: InputSender + 'static, C: ConversationStore + 'static, H: HttpClient + 'static> Tool<M>
     for CloseThreadTool<C, H>
 {
@@ -546,7 +549,8 @@ pub struct SendMessageToChildTool<C: ConversationStore> {
     pub conversation_store: C,
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<M: InputSender + 'static, C: ConversationStore + 'static> Tool<M>
     for SendMessageToChildTool<C>
 {
