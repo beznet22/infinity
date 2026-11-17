@@ -79,11 +79,20 @@ plugin overlays a WebView with a desktop user agent and writes `whatsapp.json`:
   "subtleCrypto": true }
 ```
 
-The real client boots and renders its QR; `screencap` shows the genuine login
-screen. **Pairing itself needs a human** to scan the QR, and WhatsApp's Help Center
-names unofficial clients and automation as ban triggers, so the fork shows the
-view and ships no message automation (decision D24). Delete the marker afterwards
-— the overlay is full-screen.
+The real client boots, and pairing by **phone number** works: `whatsapp_pair`
+submits the number and returns the 8-character code to type into WhatsApp on the
+phone. After that the session lives in the WebView's IndexedDB and survives
+restarts.
+
+The view is hidden: it is added at index 0, behind Tauri's UI, so the client keeps
+a real viewport without covering the app. Automation is `whatsapp_state`,
+`whatsapp_read` and `whatsapp_send` (dry-run by default). Chat rows ignore
+synthetic clicks, so the plugin dispatches real `MotionEvent` taps.
+
+Two hard-won rules (D26): **never rebuild or force-stop while a device is
+linking** — it cancels the handshake — and reads must retry, because the message
+panel renders after the tap. WhatsApp's Help Center names unofficial clients and
+automation as ban triggers; that risk is recorded in D24/D25 and is the user's.
 
 ## Running tools on Android
 

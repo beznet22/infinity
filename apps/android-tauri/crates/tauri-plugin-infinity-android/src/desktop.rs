@@ -21,6 +21,35 @@ impl InfinityAndroid {
         ))
     }
 
+    pub fn whatsapp_state(&self) -> crate::Result<ChatState> {
+        Err(crate::Error::Unsupported(
+            "the WhatsApp client only runs on Android".to_string(),
+        ))
+    }
+
+    pub fn whatsapp_read(&self, _chat: &str, _limit: u32) -> crate::Result<ReadResult> {
+        Err(crate::Error::Unsupported(
+            "the WhatsApp client only runs on Android".to_string(),
+        ))
+    }
+
+    pub fn whatsapp_send(
+        &self,
+        _chat: &str,
+        _text: &str,
+        _dry_run: bool,
+    ) -> crate::Result<SendResult> {
+        Err(crate::Error::Unsupported(
+            "the WhatsApp client only runs on Android".to_string(),
+        ))
+    }
+
+    pub fn whatsapp_pair(&self, _phone: &str) -> crate::Result<PairOutcome> {
+        Err(crate::Error::Unsupported(
+            "phone-number linking needs an Android WebView".to_string(),
+        ))
+    }
+
     pub fn whatsapp_web_probe(&self) -> crate::Result<WhatsAppProbe> {
         Err(crate::Error::Unsupported(
             "the WhatsApp Web probe needs an Android WebView".to_string(),

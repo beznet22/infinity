@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-whatsapp-send"
+description = "Enables the whatsapp_send command without any pre-configured scope."
+commands.allow = ["whatsapp_send"]
+
+[[permission]]
+identifier = "deny-whatsapp-send"
+description = "Denies the whatsapp_send command without any pre-configured scope."
+commands.deny = ["whatsapp_send"]

@@ -7,6 +7,10 @@ Enables counting contacts and probing Shizuku.
 - `allow-count-contacts`
 - `allow-shizuku-status`
 - `allow-whatsapp-web-probe`
+- `allow-whatsapp-pair`
+- `allow-whatsapp-state`
+- `allow-whatsapp-read`
+- `allow-whatsapp-send`
 
 ## Permission Table
 
@@ -65,6 +69,110 @@ Enables the shizuku_status command without any pre-configured scope.
 <td>
 
 Denies the shizuku_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:allow-whatsapp-pair`
+
+</td>
+<td>
+
+Enables the whatsapp_pair command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:deny-whatsapp-pair`
+
+</td>
+<td>
+
+Denies the whatsapp_pair command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:allow-whatsapp-read`
+
+</td>
+<td>
+
+Enables the whatsapp_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:deny-whatsapp-read`
+
+</td>
+<td>
+
+Denies the whatsapp_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:allow-whatsapp-send`
+
+</td>
+<td>
+
+Enables the whatsapp_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:deny-whatsapp-send`
+
+</td>
+<td>
+
+Denies the whatsapp_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:allow-whatsapp-state`
+
+</td>
+<td>
+
+Enables the whatsapp_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:deny-whatsapp-state`
+
+</td>
+<td>
+
+Denies the whatsapp_state command without any pre-configured scope.
 
 </td>
 </tr>

@@ -285,8 +285,8 @@ pub fn run() {
                         serde_json::to_string_pretty(&payload).unwrap_or_default(),
                     );
 
-                    // Opt-in: loading web.whatsapp.com puts a full-screen WebView
-                    // over the UI, so it only runs when this marker exists.
+                    // Opt-in: the WhatsApp WebView only runs when this marker exists.
+                    // It is hidden behind the UI, but it is still a live client.
                     if dir.join("whatsapp-probe").exists() {
                         let probe = handle.infinity_android().whatsapp_web_probe();
                         let payload = match probe {
@@ -297,6 +297,36 @@ pub fn run() {
                         };
                         let _ = std::fs::write(
                             dir.join("whatsapp.json"),
+                            serde_json::to_string_pretty(&payload).unwrap_or_default(),
+                        );
+                    }
+
+                    // Pairing needs a phone number the user supplies at runtime
+                    // (`whatsapp-config.json`), never one baked into the app.
+                    if dir.join("whatsapp-pair").exists() {
+                        let paired = std::fs::read_to_string(dir.join("whatsapp-config.json"))
+                            .ok()
+                            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                            .and_then(|config| {
+                                config
+                                    .get("phone")
+                                    .and_then(|phone| phone.as_str())
+                                    .map(str::to_string)
+                            });
+
+                        let payload = match paired {
+                            Some(phone) => match handle.infinity_android().whatsapp_pair(&phone) {
+                                Ok(outcome) => {
+                                    serde_json::to_value(outcome).unwrap_or(serde_json::Value::Null)
+                                }
+                                Err(error) => serde_json::json!({ "error": error.to_string() }),
+                            },
+                            None => serde_json::json!({
+                                "error": "whatsapp-config.json is missing a phone number"
+                            }),
+                        };
+                        let _ = std::fs::write(
+                            dir.join("whatsapp-pair.json"),
                             serde_json::to_string_pretty(&payload).unwrap_or_default(),
                         );
                     }

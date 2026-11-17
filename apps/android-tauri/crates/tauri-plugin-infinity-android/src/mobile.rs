@@ -39,6 +39,47 @@ impl<R: Runtime> InfinityAndroid<R> {
             .map_err(Into::into)
     }
 
+    /// Reports whether the linked client is ready to be driven.
+    pub fn whatsapp_state(&self) -> crate::Result<ChatState> {
+        self.0
+            .run_mobile_plugin("whatsappState", ())
+            .map_err(Into::into)
+    }
+
+    /// Opens a chat by name and returns its most recent messages.
+    pub fn whatsapp_read(&self, chat: &str, limit: u32) -> crate::Result<ReadResult> {
+        self.0
+            .run_mobile_plugin(
+                "whatsappRead",
+                serde_json::json!({ "chat": chat, "limit": limit }),
+            )
+            .map_err(Into::into)
+    }
+
+    /// Types a message into a chat. With `dry_run` it stays in the composer.
+    pub fn whatsapp_send(
+        &self,
+        chat: &str,
+        text: &str,
+        dry_run: bool,
+    ) -> crate::Result<SendResult> {
+        self.0
+            .run_mobile_plugin(
+                "whatsappSend",
+                serde_json::json!({ "chat": chat, "text": text, "dryRun": dry_run }),
+            )
+            .map_err(Into::into)
+    }
+
+    /// Submits a phone number to WhatsApp Web's linking form and returns the
+    /// pairing code. Pairing still requires approving the link inside WhatsApp
+    /// on the phone; nothing can do that automatically.
+    pub fn whatsapp_pair(&self, phone: &str) -> crate::Result<PairOutcome> {
+        self.0
+            .run_mobile_plugin("whatsappPair", serde_json::json!({ "phone": phone }))
+            .map_err(Into::into)
+    }
+
     /// Loads web.whatsapp.com in an overlay WebView and reports what booted.
     ///
     /// Blocks until the page finishes loading and the probe JS answers (tens of

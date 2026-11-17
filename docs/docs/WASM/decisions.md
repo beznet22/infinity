@@ -164,6 +164,26 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Decision:** the fork may display WhatsApp Web as a read-only view; it ships no DOM injection, scraping or message automation. The probe is opt-in through a `whatsapp-probe` marker file so the overlay never appears during normal runs.
 - **Rejected:** shipping a scraper or auto-responder (ToS violation with account-ban risk); an unofficial API (same violation, and it still needs a QR-paired session); WhatsApp Cloud API (the supported path, but it requires a business account and Meta-hosted infrastructure — incompatible with a cloud-optional local app).
 
+> **Revision (2026-11-17, user decision).** After being shown both primary sources, the user chose **full automation (read + send)** for personal use, accepting that any ban lands on their own number. The view-only boundary above no longer describes the shipped scope; D25 records the automation design and the guardrails that keep it opt-in and local. The factual findings in this entry stand: automation violates WhatsApp's terms, and nothing here makes it safe.
+
+## D25 — WhatsApp automation is opt-in, local and explicitly unofficial ⚠️
+- **Context:** D24 verified that the client boots, and the user chose full automation (read + send) knowing the terms violation and ban risk.
+- **Design:** the WebView stays the only WhatsApp client; automation is JS injected over `evaluateJavascript` on a timer, with results written to the app data dir and later delivered through RAP callbacks.
+- **Guardrails:** off unless `whatsapp-config.json` exists (pushed at runtime, never committed); no credentials or phone numbers in the repo; the pairing code is written locally for the user to type into WhatsApp; no bulk sending and no contact harvesting — the prototype reads only the conversation the user has open.
+- **Reality check:** pairing cannot be automated. The phone's WhatsApp must approve the link, so the flow is: enter the number → read the 8-character code → the user types it into WhatsApp → the session persists in IndexedDB.
+- **Consequence:** the fork's blueprint must not market this as a supported WhatsApp integration. The supported path for compliant automation remains the official Cloud API (`official_api` option), which is cloud-bound and therefore outside the cloud-optional promise.
+
+## D26 — WhatsApp Web automation: what actually works ⚠️
+- **Context:** D25 committed to automation. This records the measured mechanics, so nobody re-derives them.
+- **Linking:** the pairing-code flow works (`Link with phone number instead` → number → 8-character code → typed into WhatsApp on the phone). The code renders one character per element, so it must be matched on whitespace-stripped text.
+- **The link is fragile in one specific way:** restarting or reinstalling the app mid-link kills the handshake. Measured: a rebuild during the sync produced `Logging out` then `Couldn't link device. Keep WhatsApp open on your phone when your device is linking.` Do verification over CDP (§ below), never by restarting.
+- **Session persistence works:** after a completed link, a restart restored the chat list from IndexedDB (21 rows) with no re-pairing.
+- **Synthetic clicks do not work.** `element.click()` and dispatched `MouseEvent`s on a chat row do nothing. Trusted input does: CDP `Input.dispatchMouseEvent` opened the conversation, so production uses `WebView.dispatchTouchEvent` with real `MotionEvent`s at `CSS px × displayMetrics.density`.
+- **Selectors that actually match:** chat rows `#pane-side [role="row"]` with `data-testid="list-item-N"` and `cell-frame-title`; messages `#main [data-testid^="conv-msg-"]` (`role="row"` inside `#main` matches only empty layout rows); composer `#main div[contenteditable="true"]`; send `button[aria-label="Send"]`; search `[aria-label="Search input textbox"]`; typing via `document.execCommand('insertText', …)`.
+- **Rendering is asynchronous:** the message panel appears after the tap, so reads retry until more than one message exists.
+- **Detection boundary:** no spoofing or evasion is implemented. WhatsApp's guidelines name unofficial clients, scraping and automation as ban triggers; the mitigations here are rate limits, dry-run-by-default (`whatsapp_send` drafts unless told to send), and stopping on warnings. See D24's revision for the risk the user accepted.
+- **Status:** `whatsapp_state` ✅ (chat list, row count); `whatsapp_read` expression ✅ over CDP (23 messages / last 5 returned); the in-app retry path ⏳ unverified; `whatsapp_send` ⏳ implemented, dry-run untested.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

@@ -12,12 +12,27 @@ those two abilities — nothing else.
 | --- | --- | --- |
 | `count_contacts` | Counts the contacts the app is allowed to read | The first call shows Android's "allow access to contacts?" prompt |
 | `shizuku_status` | Reports whether Shizuku is installed and whether its server is running | Nothing — it only reports |
-| `whatsapp_web_probe` | Loads `web.whatsapp.com` in an overlay WebView and reports whether the real client booted (QR canvas, service worker, IndexedDB, WebCrypto) | The page covers the screen while it loads |
+| `whatsapp_web_probe` | Loads `web.whatsapp.com` and reports whether the real client booted (QR canvas, service worker, IndexedDB, WebCrypto) | Nothing — the view is hidden behind the app |
+| `whatsapp_pair` | Submits a phone number to the linking form and returns the 8-character pairing code | The user types that code into WhatsApp on the phone |
+| `whatsapp_state` | Polls until the chat list renders; reports `stage`, `chatList`, row count | Nothing |
+| `whatsapp_read` | Opens a chat by name and returns its most recent messages | The chat is marked read, as in a browser |
+| `whatsapp_send` | Types a message; `dry_run` (default) leaves it for the user to send | A drafted message, or a sent one |
 
 `whatsapp_web_probe` is a **prototype**: linking needs a human to scan the QR,
 and WhatsApp's terms forbid unofficial clients and automation, so it never sends a
 message. It only runs when a `whatsapp-probe` marker file exists in the app data
 directory, which keeps the overlay out of normal launches.
+
+The WhatsApp commands drive an **unofficial client** over the DOM. Two things
+about them are not obvious:
+
+- **Clicks must be trusted.** `element.click()` does nothing on chat rows; the
+  plugin dispatches real `MotionEvent`s at `CSS px × density` coordinates.
+- **Never restart during linking.** Rebuilding or force-stopping the app while
+  the device is linking cancels the handshake. Verify over CDP instead.
+
+See decision D26 in `docs/docs/WASM/decisions.md` for the selectors and measured
+behaviour, and D24/D25 for the terms-of-service risk the user accepted.
 
 ## Two halves, one plugin
 

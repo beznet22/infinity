@@ -319,6 +319,54 @@
           "markdownDescription": "Denies the shizuku_status command without any pre-configured scope."
         },
         {
+          "description": "Enables the whatsapp_pair command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-whatsapp-pair",
+          "markdownDescription": "Enables the whatsapp_pair command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the whatsapp_pair command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-whatsapp-pair",
+          "markdownDescription": "Denies the whatsapp_pair command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the whatsapp_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-whatsapp-read",
+          "markdownDescription": "Enables the whatsapp_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the whatsapp_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-whatsapp-read",
+          "markdownDescription": "Denies the whatsapp_read command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the whatsapp_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-whatsapp-send",
+          "markdownDescription": "Enables the whatsapp_send command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the whatsapp_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-whatsapp-send",
+          "markdownDescription": "Denies the whatsapp_send command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the whatsapp_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-whatsapp-state",
+          "markdownDescription": "Enables the whatsapp_state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the whatsapp_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-whatsapp-state",
+          "markdownDescription": "Denies the whatsapp_state command without any pre-configured scope."
+        },
+        {
           "description": "Enables the whatsapp_web_probe command without any pre-configured scope.",
           "type": "string",
           "const": "allow-whatsapp-web-probe",
@@ -331,10 +379,10 @@
           "markdownDescription": "Denies the whatsapp_web_probe command without any pre-configured scope."
         },
         {
-          "description": "Enables counting contacts and probing Shizuku.\n#### This default permission set includes:\n\n- `allow-count-contacts`\n- `allow-shizuku-status`\n- `allow-whatsapp-web-probe`",
+          "description": "Enables counting contacts and probing Shizuku.\n#### This default permission set includes:\n\n- `allow-count-contacts`\n- `allow-shizuku-status`\n- `allow-whatsapp-web-probe`\n- `allow-whatsapp-pair`\n- `allow-whatsapp-state`\n- `allow-whatsapp-read`\n- `allow-whatsapp-send`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Enables counting contacts and probing Shizuku.\n#### This default permission set includes:\n\n- `allow-count-contacts`\n- `allow-shizuku-status`\n- `allow-whatsapp-web-probe`"
+          "markdownDescription": "Enables counting contacts and probing Shizuku.\n#### This default permission set includes:\n\n- `allow-count-contacts`\n- `allow-shizuku-status`\n- `allow-whatsapp-web-probe`\n- `allow-whatsapp-pair`\n- `allow-whatsapp-state`\n- `allow-whatsapp-read`\n- `allow-whatsapp-send`"
         }
       ]
     }

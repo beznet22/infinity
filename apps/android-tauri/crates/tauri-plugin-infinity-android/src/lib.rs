@@ -39,7 +39,11 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .invoke_handler(tauri::generate_handler![
             commands::count_contacts,
             commands::shizuku_status,
-            commands::whatsapp_web_probe
+            commands::whatsapp_web_probe,
+            commands::whatsapp_pair,
+            commands::whatsapp_state,
+            commands::whatsapp_read,
+            commands::whatsapp_send
         ])
         .setup(|app, api| {
             #[cfg(mobile)]
