@@ -456,6 +456,7 @@ dependencies = [
  "infinity-sync",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

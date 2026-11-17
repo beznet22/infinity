@@ -392,6 +392,20 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Limits:** the transcript renders the newest version only; earlier versions are stored and retrievable but there is no switcher UI yet (that belongs with the thread list, #128). Editing does not delete history — the relay keeps every version.
 - **Assumption:** message payloads are `MessagePayload` JSON. Older ad-hoc payloads without `reply_to`/`edited_from` still render (test covers it).
 
+## D48 — Readers are unrestricted; one writer at a time ✅
+- **Summary:** `summarize()` answers the three questions a thread list needs — visible messages, the highest writer `seq`, and who (if anyone) holds the lease — plus `read_only`, which is true when the holder is another device.
+- **Surface:** CLI `inbox` lists sessions for a device; `resume --session` prints the transcript together with `holder` and `read_only`.
+- **Verified:** with the laptop holding the lease, a second device (phone root, log copied as a pull would) showed `messages=2, holder=laptop, read_only=true` and the same two transcript rows; after release it showed `holder=None, read_only=false`.
+- **Why copying the log is a fair simulation here:** `pull` writes exactly the events the relay returns, and the store format is the log itself. The relay deployment is gone (D34), so a local copy is the same bytes without pretending a network round-trip happened.
+- **Limits:** no UI yet (the CLI is the surface), no pagination on long sessions, and a reader must pull before it can show anything — resume does not fetch by itself.
+
+## D49 — Message queue, remove, restore and delete are **not** implemented ❌
+Asked explicitly; the honest state:
+- **What exists:** the driver defers inputs that arrive mid-step (`InMemoryDeferQueue` + `pending_batch`), and the TUI queues *choice requests* (`PendingChoice`). Both are internal scheduling, neither is a user-visible message queue, and neither offers remove/restore.
+- **What does not exist:** enqueueing a message for later, removing one from the queue, restoring a removed one, or deleting any message. The event log is append-only and has no tombstones, so "delete" has no representation at all.
+- **Why the log matters:** delete/restore must be events too (a tombstone plus a restore), otherwise a second device cannot tell the difference between "deleted" and "never received". Any UI-only delete would resurrect on the next pull.
+- **Sketch for the next chunk (#130):** `MessageQueued` (a message with `queued: true`), `MessageRemoved` (drops it from the queue), `MessageDeleted` (tombstone, hidden from `transcript`), `MessageRestored` (clears either removal or tombstone). Queue state and visibility are both folds over the log, so they survive a pull by definition.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

@@ -19,7 +19,7 @@ use infinity_sync::http::HttpTransport;
 use infinity_sync::{
     CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, LeaseGuard, Role,
     SessionId, SyncEvent, current_lease, lease_event, message, message_event, next_fence, now_ms,
-    replay, snapshot_event, transcript, versions,
+    replay, snapshot_event, summarize, transcript, versions,
 };
 use uuid::Uuid;
 
@@ -375,6 +375,60 @@ async fn main() -> Result<(), String> {
             let sessions = store.sessions().await.map_err(|e| e.to_string())?;
             let names: Vec<&str> = sessions.iter().map(|s| s.as_str()).collect();
             println!("{}", serde_json::json!({ "sessions": names }));
+        }
+        "inbox" => {
+            let sessions = store.sessions().await.map_err(|e| e.to_string())?;
+            let mut rows = Vec::new();
+            for session in sessions {
+                let events = store
+                    .events_since(&session, 0)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let summary = summarize(&session, &events, &args.device, now_ms());
+                rows.push(serde_json::json!({
+                    "session": summary.session.as_str(),
+                    "messages": summary.messages,
+                    "last_seq": summary.last_seq,
+                    "holder": summary.holder.as_ref().map(|h| h.to_string()),
+                    "read_only": summary.read_only,
+                }));
+            }
+            println!(
+                "{}",
+                serde_json::json!({ "device": args.device.as_str(), "sessions": rows })
+            );
+        }
+        "resume" => {
+            // What another device sees: the transcript, how far the log goes, and
+            // whether this device may write.
+            let session = args.session.clone().ok_or("resume needs --session")?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            let summary = summarize(&session, &events, &args.device, now_ms());
+            let rows: Vec<serde_json::Value> = transcript(&events)
+                .into_iter()
+                .map(|row| {
+                    serde_json::json!({
+                        "role": match row.role { Role::User => "user", Role::Assistant => "assistant" },
+                        "text": row.text,
+                        "versions": row.versions,
+                    })
+                })
+                .collect();
+            println!(
+                "{}",
+                serde_json::json!({
+                    "session": summary.session.as_str(),
+                    "device": args.device.as_str(),
+                    "messages": summary.messages,
+                    "last_seq": summary.last_seq,
+                    "holder": summary.holder.as_ref().map(|h| h.to_string()),
+                    "read_only": summary.read_only,
+                    "transcript": rows,
+                })
+            );
         }
         other => return Err(format!("unknown command {other}")),
     }

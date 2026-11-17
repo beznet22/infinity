@@ -19,6 +19,7 @@
 mod lease;
 mod snapshot;
 mod store;
+mod summary;
 mod thread;
 mod types;
 
@@ -31,6 +32,7 @@ pub use lease::{
 };
 pub use snapshot::{SnapshotPayload, replay, snapshot_event};
 pub use store::{CursorStore, EventStore, FileEventStore};
+pub use summary::{SessionSummary, summarize};
 pub use thread::{
     MessagePayload, Role, TranscriptEntry, alternatives, message, message_event, transcript,
     versions,
