@@ -1,9 +1,15 @@
 pub mod callback;
 pub mod error;
+/// Git process plumbing (native only, see the `native` feature).
+#[cfg(feature = "native")]
 pub mod git;
+/// Jujutsu process plumbing (native only, see the `native` feature).
+#[cfg(feature = "native")]
 pub mod jj;
 pub mod metadata;
 pub mod sandbox;
+/// The sandbox HTTP server (native only, see the `native` feature).
+#[cfg(feature = "native")]
 pub mod server;
 pub mod types;
 

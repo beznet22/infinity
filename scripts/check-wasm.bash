@@ -39,7 +39,6 @@ CRATES=(
 # Crates still expected to FAIL. Remove entries as Phase 0 chunks land; the gate
 # fails when a crate here starts passing, so the list cannot silently rot.
 EXPECTED_RED=(
-    sandbox-core
     infinity-mcp-bridge
 )
 
@@ -64,7 +63,15 @@ unexpected_green=()
 unexpected_red=()
 
 for crate in "${CRATES[@]}"; do
-    if cargo check --quiet --target "$TARGET" -p "$crate" > /dev/null 2>&1; then
+    # `sandbox-core` gates its native surface (HTTP server, git/jj plumbing,
+    # process handles) behind a default-on `native` feature; a browser build is
+    # the no-default-features configuration.
+    extra=()
+    if [ "$crate" = "sandbox-core" ]; then
+        extra=(--no-default-features)
+    fi
+
+    if cargo check --quiet --target "$TARGET" -p "$crate" "${extra[@]}" > /dev/null 2>&1; then
         if is_expected_red "$crate"; then
             unexpected_green+=("$crate")
         else

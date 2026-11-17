@@ -54,6 +54,10 @@ pub struct ChangedFile {
 }
 
 /// Parse `git diff --name-status` or `jj diff --summary` output into (status, path) pairs.
+///
+/// Native only: the git/jj plumbing that consumes it is behind the `native`
+/// feature.
+#[cfg(feature = "native")]
 pub(crate) fn parse_changed_files(output: &str) -> Vec<(FileChangeStatus, &str)> {
     output
         .lines()

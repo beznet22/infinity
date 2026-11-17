@@ -7,6 +7,10 @@ use crate::error::SandboxError;
 use crate::types::{ChangedFile, RepoState, SandboxMode};
 
 /// A spawned command with its child process handle.
+///
+/// Native only: `tokio::process::Child` does not exist on
+/// `wasm32-unknown-unknown` (see the `native` feature).
+#[cfg(feature = "native")]
 pub struct SpawnedCommand {
     pub child: tokio::process::Child,
 }
@@ -168,6 +172,10 @@ pub trait SandboxBackend: Send + Sync {
     ///
     /// `sandbox_writable` controls whether the sandbox directory itself is
     /// writable. Set to `false` for Direct mode where no file writes are allowed.
+    ///
+    /// Native only: browser sandboxes execute commands through their own
+    /// executor rather than an OS child process (see the `native` feature).
+    #[cfg(feature = "native")]
     async fn spawn_command(
         &self,
         sandbox_dir: &Path,

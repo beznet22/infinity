@@ -49,7 +49,7 @@ Promoted decisions (recorded in the plan, echoed into `decisions.md` when each c
 
 Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the `check.bash` wasm step in place.
 
-**Baseline before this work: 1 green / 6 red. Current: 5 green / 2 expected-red.**
+**Baseline before this work: 1 green / 6 red. Current: 6 green / 1 expected-red.**
 
 | # | Work item | Chunk | Files | Status |
 |---|---|---|---|---|
@@ -59,7 +59,7 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | W9 | Config-path injection (`dirs::home_dir`) | 0.4 | `infinity-protocol/src/lib.rs` | ⏭ reclassified — `dirs` **does** compile on wasm (crate is green); home dir resolves to none at runtime, so injection is a correctness item, not a blocker |
 | W2 (cont.) | **`?Send` propagation through `Tool`**: cfg-gated trait (native `Send + Sync` / wasm `?Send`) + `cfg_attr` on 11 impl sites (9 agent-core, 1 mcp-bridge, 1 `NoRapHttp`) | 0.5 | `infinity-agent-core/src/tools/{mod,rap_tool,thread,cancel_subscription,sleep}.rs`, `system/builder.rs`, `infinity-mcp-bridge/src/lib.rs` | ✅ |
 | W5+W6 | `SliceTimer` (**D18**), direct `std::fs` removal, gating `system/local/` | 0.5 → **Phase 3** | `infinity-agent-core` | ⏭ deferred — none of these block compilation (`tokio::time` and `std::fs` compile and fail only at runtime; `system/local` has no process/net/thread usage) |
-| W7 | Sandbox trait/impl split (`native` feature; `which` + mio) | 0.6 | `sandbox-core` | ⬜ |
+| W7 | Sandbox trait/impl split — default-on `native` feature gating `server`/`git`/`jj` + `SpawnedCommand`/`spawn_command` and their 8 native-only deps; gate runs the crate with `--no-default-features` | 0.6 | `sandbox-core/{Cargo.toml,src/lib.rs,src/sandbox.rs}`, `scripts/check-wasm.bash` | ✅ |
 | W8 | Gate `StdioMcpTransport` native-only (mio via tokio `process`) | 0.7 | `infinity-mcp-bridge/src/lib.rs` | ⬜ |
 | — | Sweep + record + exit | 0.8 | all 7 crates | ⬜ |
 
@@ -113,7 +113,7 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 
 | Gate | Current state (verified) | Target |
 |---|---|---|
-| `cargo check --target wasm32-unknown-unknown` (core set) | **5 green** (`infinity-protocol`, `rap-protocol`, `infinity-provider-protocol`, `rap-client`, `infinity-agent-core`) / **2 expected-red** — verified in the worktree | all 7 green (Phase 0 exit) |
+| `cargo check --target wasm32-unknown-unknown` (core set) | **6 green** (all but `infinity-mcp-bridge`) / **1 expected-red** — verified in the worktree | all 7 green (Phase 0 exit) |
 | `bash scripts/check-wasm.bash` | ✅ **green** — pins the expected state: fails if a green crate regresses or a red crate turns green unnoticed | stays green while `EXPECTED_RED` shrinks |
 | `check.bash` | wasm step **added**; the suite still aborts at the `jj` prerequisite in this dev env (pre-existing), so the step is exercised directly via the script above | runnable in CI |
 | Native build (`cargo check --workspace --all-targets`) | ✅ **green** after the trait cfg-split (axum `Send` preserved) | stays green after every Phase 0/1 change |
@@ -141,3 +141,5 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | 2026-11-17 | 0.4 | **Reclassified, not implemented:** `infinity-protocol` is green without path injection (the `dirs` crate compiles for wasm). `dirs::home_dir()` yields no directory at runtime on wasm, so injection remains a Phase 3 correctness item rather than a compile blocker. |
 | 2026-11-17 | 0.5 | `Tool<M>` cfg-gated (native `Send + Sync` + `#[async_trait]`; wasm bare + `?Send`), `cfg_attr` on 11 impl sites including `NoRapHttp` (E0053). `infinity-agent-core` green on wasm. **W5/W6/`system/local` deferred to Phase 3** (D18): they are runtime-correctness items, not compile blockers. |
 | 2026-11-17 | process | Work (docs audit + chunks 0.1–0.5) had been done on `main` in the root checkout; corrected by moving everything into the `../infinity-hybrid` worktree on `feat/wasm-android-hybrid` (overview §1). Root is clean on `main` again. |
+| 2026-11-17 | 0.6 | `sandbox-core` gained a default-on `native` feature gating `server`/`git`/`jj`, `SpawnedCommand`/`SandboxBackend::spawn_command`, and 8 native-only deps (axum, reqwest, similar, which, tempfile, base64, tokio, tracing). Browser builds use `--no-default-features`; the gate passes that flag for this crate. Verified: wasm green, native workspace green, 31 sandbox-core tests pass. Found: `which` 8.0.2 does not compile for wasm at all (`E0046`), reachable only from the gated server. |
+| 2026-11-17 | docs | Added `docs/docs/WASM/README.md` — consumer guide covering the `default-features = false` requirement and its failure modes, RNG features, the target-dependent `Send` bounds, and the runtime-only wasm limits. |

@@ -8,20 +8,39 @@ edition = "2024"
 repository = { workspace = true }
 license = "Apache-2.0"
 
+[features]
+default = ["native"]
+# Native-only surface: the sandbox HTTP server (`server`), git/jj process
+# plumbing (`git`, `jj`) and the process handle in `SandboxBackend`. Browser
+# builds consume this crate with `default-features = false`; everything left
+# (types, traits, metadata, error) is portable.
+native = [
+    "dep:axum",
+    "dep:base64",
+    "dep:reqwest",
+    "dep:similar",
+    "dep:tempfile",
+    "dep:tokio",
+    "dep:tracing",
+    "dep:which",
+]
+
 [dependencies]
 rap-protocol = { path = "../rap-protocol", version = "^0.2.0" }
-base64 = "0.22"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "process", "io-util", "time", "sync", "fs"] }
-axum = { workspace = true, features = ["multipart"] }
-reqwest = { workspace = true, features = ["multipart"] }
-tracing = { workspace = true }
-similar = { workspace = true }
-which = { workspace = true }
-tempfile = { workspace = true }
+
+# Native-only dependencies, enabled by the `native` feature above.
+base64 = { version = "0.22", optional = true }
+tokio = { workspace = true, optional = true, features = ["macros", "process", "io-util", "time", "sync", "fs"] }
+axum = { workspace = true, optional = true, features = ["multipart"] }
+reqwest = { workspace = true, optional = true, features = ["multipart"] }
+tracing = { workspace = true, optional = true }
+similar = { workspace = true, optional = true }
+which = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal"] }

@@ -55,7 +55,12 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 - **Work:** define `SliceTimer` (sleep-until / now) with a tokio impl (native) and a wasmtimer impl stub (wasm, validated in 3.1); route `tools/sleep.rs:100`, `system/local/handle.rs:291`, `event_processor.rs:5065` through it or behind native gates; gate `system/local/` native wholesale (desktop-resident machinery per its module docs); remove `std::fs::read_to_string` (`tools/config.rs:125`) — config arrives via `ThreadConfigSource`, with a native file-based impl replacing the old read.
 - **Accept:** crate green on wasm; `cargo test --all-targets` green on host.
 
-### 0.6 `sandbox-core` — trait/impl split (W7)
+### 0.6 `sandbox-core` — trait/impl split (W7) *(as implemented)*
+
+- **Mechanism chosen (user):** default-on `native` feature (not automatic target cfg). Browser builds consume the crate with `default-features = false`; the readiness gate passes `--no-default-features` for this crate. Consumer-facing consequences and failure modes are documented in [`README.md`](./README.md).
+- **Implemented:** `#[cfg(feature = "native")]` on the `server`/`git`/`jj` modules, on `SpawnedCommand` and `SandboxBackend::spawn_command`, and `optional = true` on the eight native-only dependencies (axum, reqwest, similar, which, tempfile, base64, tokio, tracing). No behavioral change on native; `sandbox-local`/`sandbox-remote` keep default features.
+- **Finding:** `which` 8.0.2 fails to compile for wasm (`E0046 missing is_valid_executable` in its own `sys.rs`), so it can never appear in a wasm path; it is only used by the gated `server` module.
+- **Verified:** wasm green (`--no-default-features`), native workspace green, 31 `sandbox-core` tests pass.
 - **Files:** `Cargo.toml` (default-on `native` feature), `sandbox.rs` (core type), `server.rs`, `git.rs`, `jj.rs`.
 - **Work:** native-only: git/jj/rg spawning, `which`, `tempfile`, tokio-fs server surface, `tokio::process::Child` in the core type (`sandbox.rs:11`). Portable: `ModeProvider`/`SandboxBackend`/`MetadataStore` + pure types. Keep existing `[target.'cfg(unix)']` nix gating.
 - **Accept:** crate green on wasm with `default-features = false`; host builds unchanged.
