@@ -17,6 +17,7 @@ use rap_client::http::{InMemoryToolsetCache, SimpleHttpClient};
 use rig::client::CompletionClient;
 use sandbox_core::executor::{ExecRequest, ProcessSandboxExecutor, SandboxExecutor};
 use serde::{Deserialize, Serialize};
+use infinity_sync::EventStore;
 use tauri::Manager;
 use tauri_plugin_infinity_android::InfinityAndroidExt;
 
@@ -117,6 +118,9 @@ struct ChatOutcome {
     /// `acquired`/`released` on a normal run, `denied` when another device holds
     /// the session.
     lease: String,
+    /// Queued messages this turn took from the log, in order.
+    #[serde(default)]
+    drained: usize,
 }
 
 /// Builds an HTTP client whose TLS trust anchors are compiled into the binary.
@@ -174,13 +178,14 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
     .await
     .map_err(|error| format!("lease: {error}"))?;
 
-    let Some(guard) = guard else {
+    let Some(mut guard) = guard else {
         return Ok(ChatOutcome {
             model: config.model,
             reply: String::new(),
             notes: vec!["another device holds this session".to_owned()],
             timed_out: false,
             lease: "denied".to_owned(),
+            drained: 0,
         });
     };
 
@@ -218,17 +223,8 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
     .start();
 
     let mut thread = system.thread_builder().launch().await;
-    thread
-        .send_user_text(config.prompt.clone())
-        .await
-        .map_err(|error| error.to_string())?;
 
-    let mut reply = String::new();
-    let mut notes = Vec::new();
-    let mut timed_out = false;
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(45);
-
-    // Keep the lease alive while the turn runs. The interval is shorter than the
+    // Keep the lease alive while any turn runs. The interval is shorter than the
     // TTL so two missed beats still leave the claim valid; the foreground
     // service (started by the caller) is what keeps this ticking when the app is
     // backgrounded.
@@ -236,10 +232,166 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     heartbeat.tick().await; // the first tick completes immediately; skip it
 
+    // Anything the user queued while the phone was busy is delivered first, in
+    // the order it was written. Each message becomes a MessageSent event and its
+    // answer is appended to the log, so other devices see the whole exchange.
+    let mut drained = 0usize;
+    let mut queue_replies: Vec<String> = Vec::new();
+    while drained < 5 {
+        let events = lease_store
+            .events_since(&session, 0)
+            .await
+            .map_err(|error| error.to_string())?;
+        let Some(entry) = infinity_sync::queue(&events).into_iter().next() else {
+            break;
+        };
+
+        let seq = lease_store
+            .last_seq(&session)
+            .await
+            .map_err(|error| error.to_string())?
+            + 1;
+        let sent = infinity_sync::send_event(
+            session.clone(),
+            device.clone(),
+            seq,
+            entry.event_id,
+        )
+        .with_fence(guard.fence());
+        lease_store
+            .append(&sent)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        let (text, _, _) = run_prompt(
+            &mut thread,
+            entry.text.clone(),
+            &mut guard,
+            &lease_store,
+            45,
+            &mut heartbeat,
+        )
+        .await?;
+
+        let seq = lease_store
+            .last_seq(&session)
+            .await
+            .map_err(|error| error.to_string())?
+            + 1;
+        let answer = infinity_sync::message_event(
+            session.clone(),
+            device.clone(),
+            seq,
+            infinity_sync::EventKind::AssistantMessage,
+            text.clone(),
+            Some(entry.event_id),
+            None,
+        )
+        .with_fence(guard.fence());
+        lease_store
+            .append(&answer)
+            .await
+            .map_err(|error| error.to_string())?;
+
+        queue_replies.push(text);
+        drained += 1;
+    }
+
+    let mut reply = String::new();
+    let mut notes = Vec::new();
+    let mut timed_out = false;
+
+    if drained == 0 {
+        // Nothing was queued, so the probe runs its configured prompt.
+        let (text, info, timed) = run_prompt(
+            &mut thread,
+            config.prompt.clone(),
+            &mut guard,
+            &lease_store,
+            45,
+            &mut heartbeat,
+        )
+        .await?;
+        reply = text;
+        notes = info;
+        timed_out = timed;
+    } else if let Some(last) = queue_replies.last() {
+        // A queued run already produced the answer; report it rather than asking
+        // the same question twice.
+        reply = last.clone();
+    }
+
+    // Publish the claim immediately, so a second device that starts now is
+    // refused rather than racing us.
+    if let Some(relay) = &relay {
+        push_session(&lease_store, relay, &session).await?;
+    }
+
+    if read_hold_lease(dir) {
+        // Two-device test: stay the holder instead of releasing.
+        return Ok(ChatOutcome {
+            model: config.model,
+            reply,
+            notes,
+            timed_out,
+            lease: "held".to_owned(),
+            drained,
+        });
+    }
+
+    guard
+        .release(&lease_store)
+        .await
+        .map_err(|error| format!("lease release: {error}"))?;
+    if let Some(relay) = &relay {
+        push_session(&lease_store, relay, &session).await?;
+    }
+
+    Ok(ChatOutcome {
+        model: config.model,
+        reply,
+        notes,
+        timed_out,
+        lease: "released".to_owned(),
+        drained,
+    })
+}
+
+fn read_sync_config(dir: &std::path::Path) -> Option<serde_json::Value> {
+    let raw = std::fs::read_to_string(dir.join("sync-config.json")).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn read_sync_relay(dir: &std::path::Path) -> Option<String> {
+    read_sync_config(dir)?.get("relay_url")?.as_str().map(str::to_owned)
+}
+
+/// Run one prompt on the thread, renewing the lease while it works.
+///
+/// Returns `(reply, info notes, timed out)`. The caller owns the deadline policy
+/// (the probe uses 45 s per turn).
+async fn run_prompt(
+    thread: &mut infinity_agent_core::system::local::ThreadHandle,
+    prompt: String,
+    guard: &mut infinity_sync::LeaseGuard,
+    lease_store: &infinity_sync::FileEventStore,
+    timeout_secs: u64,
+    heartbeat: &mut tokio::time::Interval,
+) -> Result<(String, Vec<String>, bool), String> {
+    thread
+        .send_user_text(prompt)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut reply = String::new();
+    let mut notes = Vec::new();
+    let mut timed_out = false;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+
     loop {
         tokio::select! {
             _ = heartbeat.tick() => {
-                if let Err(error) = guard.renew(&lease_store).await {
+                if let Err(error) = guard.renew(lease_store).await {
                     eprintln!("lease renew failed: {error}");
                 }
             }
@@ -260,47 +412,7 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
         }
     }
 
-    // Publish the claim immediately, so a second device that starts now is
-    // refused rather than racing us.
-    if let Some(relay) = &relay {
-        push_session(&lease_store, relay, &session).await?;
-    }
-
-    if read_hold_lease(dir) {
-        // Two-device test: stay the holder instead of releasing.
-        return Ok(ChatOutcome {
-            model: config.model,
-            reply,
-            notes,
-            timed_out,
-            lease: "held".to_owned(),
-        });
-    }
-
-    guard
-        .release(&lease_store)
-        .await
-        .map_err(|error| format!("lease release: {error}"))?;
-    if let Some(relay) = &relay {
-        push_session(&lease_store, relay, &session).await?;
-    }
-
-    Ok(ChatOutcome {
-        model: config.model,
-        reply,
-        notes,
-        timed_out,
-        lease: "released".to_owned(),
-    })
-}
-
-fn read_sync_config(dir: &std::path::Path) -> Option<serde_json::Value> {
-    let raw = std::fs::read_to_string(dir.join("sync-config.json")).ok()?;
-    serde_json::from_str(&raw).ok()
-}
-
-fn read_sync_relay(dir: &std::path::Path) -> Option<String> {
-    read_sync_config(dir)?.get("relay_url")?.as_str().map(str::to_owned)
+    Ok((reply, notes, timed_out))
 }
 
 fn read_hold_lease(dir: &std::path::Path) -> bool {

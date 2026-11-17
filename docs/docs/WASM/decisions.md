@@ -415,6 +415,15 @@ Asked explicitly; the honest state:
 - **Limits:** pull-based — a second device learns about queue/delete changes on its next pull, there is no push yet. The agent driver does not consume this queue yet (its own `InMemoryDeferQueue` still holds mid-step inputs); wiring the two together is the next integration step.
 - **Why not a UI-only delete:** it would resurrect on the next pull, and a peer could not tell "deleted" from "never received" (D49).
 
+## D51 — A real device turn drains the queue ✅
+- **Where:** the Android chat probe. Before its configured prompt it folds the log with `queue()`, and for each waiting message it appends `MessageSent`, runs the model, and appends the `AssistantMessage` with `reply_to` set to the queued event.
+- **Ordering and bounds:** FIFO by enqueue time, at most 5 messages per run, so one launch cannot spiral into an unbounded number of model calls.
+- **Lease:** every appended event carries `guard.fence()`, and the same 5 s heartbeat renews the lease across *all* drained turns, not just the first.
+- **Verified on the tablet:** seeded two queued messages, launched the probe, and got `{"reply":"beta","drained":2}` in `chat.json`, with the log showing `message_sent → assistant_message("alpha")`, `message_sent → assistant_message("beta")`, all fenced at 1, plus claim/release.
+- **Deliberate behavior:** when anything was drained the configured prompt is skipped — asking the same question twice in one launch wastes a paid call. The reply field reports the last drained answer.
+- **Layering:** this bridges at the app layer, as D33 requires; the fork's core `InMemoryDeferQueue` still handles mid-step inputs for callers that do not use the sync log.
+- **Remaining gap:** a second device learns about queue changes on its next pull. Closing that needs a push channel (WebSocket/DO) or polling; the relay deployment is currently absent by choice.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
