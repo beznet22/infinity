@@ -497,6 +497,12 @@ Asked explicitly; the honest state:
 - **Risk, stated plainly:** two implementations can drift. The fixture is the guard; a future change to the Rust fold must regenerate the fixture and update the JS in the same commit, and a crate split would remove the mirror entirely.
 - **Not done:** the browser still has no page consuming this fold from wa-sqlite/OPFS. That wiring (plus a reload-persistence test) is todo #142.
 
+## D62 — The browser page runs on OPFS through a worker ✅
+- **Storage:** a dedicated module worker owns `OpfsDb("infinity-app.db")` and the `events` table (same columns as the Rust store). The page talks to it with `{type: "load"}` / `{type: "append"}` messages — the same shape as Android's Tauri commands, so both hosts expose one contract.
+- **View:** the page computes `sessionView` with the parity-tested JS port (D61) and hands it to the shared renderer (D59). Commands become events: `message_queued`, `user_message`, `message_dequeued`, `conversation_restored`.
+- **Verified in headless Chrome** (COOP/COEP server on 8128): typing `queued in the browser` and tapping queue produced `1 events in OPFS · 0 visible · 1 queued`; **reloading the page kept the queue entry and the count**, so the data is in OPFS rather than memory.
+- **Limits:** one fixed session (`browser-chat`), no lease acquisition in the page yet (so it never shows a read-only banner from real data), and no relay sync from the browser UI. Those belong with the E2E and wake steps.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

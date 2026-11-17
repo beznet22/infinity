@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Infinity — browser</title>
+    <style>
+      :root { color-scheme: light; font-family: system-ui, sans-serif; }
+      body { margin: 0; padding: 1rem; max-width: 44rem; }
+      .threads { display: flex; gap: .5rem; list-style: none; padding: 0; }
+      .thread { border: 1px solid #888; border-radius: 6px; padding: .2rem .5rem; cursor: pointer; }
+      .thread--active { font-weight: 600; border-color: #222; }
+      .banner { background: #fff3cd; padding: .5rem; border-radius: 4px; }
+      .transcript, .queue ul { list-style: none; padding: 0; }
+      .message { margin: .4rem 0; padding: .4rem .5rem; border-radius: 6px; background: #f1f1f1; }
+      .message .role { font-weight: 600; text-transform: uppercase; font-size: .75rem; margin-right: .4rem; }
+      .message button, .queued button { margin-left: .4rem; font-size: .75rem; }
+      .queue { border-top: 1px dashed #aaa; margin-top: 1rem; padding-top: .5rem; }
+      .composer { display: flex; gap: .5rem; margin-top: 1rem; }
+      .composer textarea { flex: 1; font: inherit; padding: .4rem; }
+      #status { color: #666; font-size: .8rem; }
+    </style>
+  </head>
+  <body>
+    <div id="app">loading…</div>
+    <p id="status"></p>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>
