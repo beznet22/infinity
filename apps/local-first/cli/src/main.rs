@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use infinity_sync::http::HttpTransport;
 use infinity_sync::{
     CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, LeaseGuard,
-    SessionId, SyncEvent, current_lease, lease_event, now_ms, replay, snapshot_event,
+    SessionId, SyncEvent, current_lease, lease_event, next_fence, now_ms, replay, snapshot_event,
 };
 
 struct Args {
@@ -89,13 +89,25 @@ async fn main() -> Result<(), String> {
             let session = args.session.clone().ok_or("write needs --session")?;
             let text = args.text.clone().ok_or("write needs --text")?;
             let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
-            let event = SyncEvent::new(
+            // Stamp the writer's fencing token when it holds the lease; the relay
+            // drops writes that carry an older one.
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            let fence = current_lease(&events, now_ms())
+                .filter(|lease| lease.owner == args.device)
+                .map(|lease| lease.fence);
+            let mut event = SyncEvent::new(
                 session.clone(),
                 args.device.clone(),
                 seq,
                 EventKind::UserMessage,
                 serde_json::json!({ "text": text, "at": now_ms() }),
             );
+            if let Some(fence) = fence {
+                event = event.with_fence(fence);
+            }
             store.append(&event).await.map_err(|e| e.to_string())?;
             println!(
                 "{}",
@@ -152,6 +164,10 @@ async fn main() -> Result<(), String> {
             // presence of --ttl only, so the demo stays explicit and small.
             let session = args.session.clone().ok_or("lease needs --session")?;
             let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
             let event = lease_event(
                 session.clone(),
                 args.device.clone(),
@@ -159,6 +175,7 @@ async fn main() -> Result<(), String> {
                 LeaseAction::Claim,
                 args.ttl_ms.unwrap_or(infinity_sync::DEFAULT_TTL_MS),
                 now_ms(),
+                next_fence(&events),
             );
             store.append(&event).await.map_err(|e| e.to_string())?;
             let events = store
@@ -195,6 +212,10 @@ async fn main() -> Result<(), String> {
         "unguard" => {
             let session = args.session.clone().ok_or("unguard needs --session")?;
             let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
             let event = lease_event(
                 session.clone(),
                 args.device.clone(),
@@ -202,6 +223,9 @@ async fn main() -> Result<(), String> {
                 LeaseAction::Release,
                 args.ttl_ms.unwrap_or(infinity_sync::DEFAULT_TTL_MS),
                 now_ms(),
+                current_lease(&events, now_ms())
+                    .map(|lease| lease.fence)
+                    .unwrap_or(0),
             );
             store.append(&event).await.map_err(|e| e.to_string())?;
             println!(

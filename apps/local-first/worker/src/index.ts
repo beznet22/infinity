@@ -18,6 +18,8 @@ interface SyncEvent {
   kind: string;
   payload: unknown;
   created_at_ms: number;
+  /** Fencing token of the writer's lease (0 when it never held one). */
+  fence?: number;
 }
 
 // The browser and the Worker are different origins, so every response needs CORS.
@@ -53,13 +55,30 @@ export default {
       }
 
       let accepted = 0;
+      let stale = 0;
       let lastSeq = 0;
       for (const event of events) {
+        const fence = Number(event.fence ?? 0);
+
+        // Fencing: once a session has a newer holder, events stamped with an
+        // older token are dropped. Expiry alone leaves a window where a stalled
+        // writer and the new holder both believe they may write.
+        const row = await env.DB.prepare(
+          `SELECT current_fence FROM sessions WHERE session_id = ?`,
+        )
+          .bind(event.session_id)
+          .first<{ current_fence: number }>();
+        const currentFence = Number(row?.current_fence ?? 0);
+        if (fence < currentFence) {
+          stale += 1;
+          continue;
+        }
+
         // Idempotent by (session_id, event_id): a retried push is a no-op.
         const result = await env.DB.prepare(
           `INSERT INTO events
-             (session_id, event_id, seq, device_id, kind, payload, created_at_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+             (session_id, event_id, seq, device_id, kind, payload, created_at_ms, fence)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (session_id, event_id) DO NOTHING`,
         )
           .bind(
@@ -70,13 +89,23 @@ export default {
             event.kind,
             JSON.stringify(event.payload ?? null),
             event.created_at_ms,
+            fence,
           )
           .run();
         accepted += result.meta.changes ?? 0;
         lastSeq = Math.max(lastSeq, event.seq);
+
+        if (fence > currentFence) {
+          await env.DB.prepare(
+            `INSERT INTO sessions (session_id, current_fence) VALUES (?, ?)
+             ON CONFLICT (session_id) DO UPDATE SET current_fence = excluded.current_fence`,
+          )
+            .bind(event.session_id, fence)
+            .run();
+        }
       }
 
-      return json({ accepted, last_seq: lastSeq });
+      return json({ accepted, stale, last_seq: lastSeq });
     }
 
     if (url.pathname === "/v1/sync/pull" && request.method === "GET") {
@@ -87,7 +116,7 @@ export default {
       }
 
       const { results } = await env.DB.prepare(
-        `SELECT position, session_id, event_id, seq, device_id, kind, payload, created_at_ms
+        `SELECT position, session_id, event_id, seq, device_id, kind, payload, created_at_ms, fence
            FROM events
           WHERE session_id = ? AND position > ?
           ORDER BY position ASC`,

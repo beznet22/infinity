@@ -374,6 +374,15 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Honest limits (not overclaimed):** a foreground service is not immortality — Android 12+ restricts starting it from the background, 14+ requires the declared type, 15 caps `dataSync` at ~6 h/day, and OEM builds still kill apps. The TTL is what protects other devices when the service dies anyway.
 - **Next correctness step:** a **fencing token** on claims (monotonic per session; the relay rejects appends carrying a stale one) closes the brief overlap that expiry alone permits.
 
+## D46 — Fencing tokens close the expiry window ✅
+- **Why:** a lease TTL alone allows a stalled holder and the new holder to both believe they may write. The fence makes supersession explicit.
+- **Token:** every `lease_claim`/`lease_renew` carries `fence = 1 + max(fence seen for the session)`; the guard stores it, stamps it on its own writes (`SyncEvent::with_fence`), and advances it on renewal.
+- **Superseded holder:** `LeaseGuard::renew` computes the next fence and refuses with `SyncError::LeaseLost` before appending anything when it is no longer `own fence + 1`.
+- **Relay:** D1 keeps `sessions.current_fence`; push drops any event whose fence is below it and returns `{accepted, stale}`. The events table stores the fence it accepted.
+- **Verified locally:** claim f1 → accepted, message f1 → accepted, claim f2 → accepted, message f1 → `stale: 1` (not stored), message f2 → accepted. Log shows exactly the four accepted rows.
+- **Limits (honest):** the read-then-write check is not atomic under concurrent pushes to the same session — two racing writes can both pass. The lease claim is still the primary serialization; the fence removes the long-tail window, not every race. A Durable Object or a conditional `INSERT … WHERE` per session would close it.
+- **Unfenced writes:** an event with no fence counts as 0, so once a session has taken a lease only fenced writes are accepted. This is deliberate; the CLI stamps the current holder's fence.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

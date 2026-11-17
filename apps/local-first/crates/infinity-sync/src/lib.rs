@@ -26,7 +26,7 @@ pub mod http;
 
 pub use lease::{
     DEFAULT_TTL_MS, LeaseAction, LeaseGuard, LeasePayload, LeaseState, current_lease, lease_event,
-    may_write,
+    may_write, next_fence,
 };
 pub use snapshot::{SnapshotPayload, replay, snapshot_event};
 pub use store::{CursorStore, EventStore, FileEventStore};
@@ -49,6 +49,8 @@ pub enum SyncError {
         #[source]
         error: serde_json::Error,
     },
+    #[error("lease lost: another device claimed the session")]
+    LeaseLost,
     #[cfg(feature = "http")]
     #[error("transport error: {0}")]
     Transport(#[source] reqwest::Error),

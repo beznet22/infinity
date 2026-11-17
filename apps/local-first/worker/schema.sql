@@ -9,7 +9,14 @@ CREATE TABLE IF NOT EXISTS events (
   kind          TEXT    NOT NULL,
   payload       TEXT    NOT NULL,
   created_at_ms INTEGER NOT NULL,
+  fence         INTEGER NOT NULL DEFAULT 0,
   UNIQUE (session_id, event_id)
+);
+
+-- One row per session: the newest fencing token the relay has accepted.
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id    TEXT PRIMARY KEY,
+  current_fence INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_session_position

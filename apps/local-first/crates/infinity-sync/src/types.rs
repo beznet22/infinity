@@ -83,6 +83,11 @@ pub struct SyncEvent {
     pub kind: EventKind,
     pub payload: serde_json::Value,
     pub created_at_ms: u64,
+    /// Fencing token of the writer's lease, when it had one. A relay rejects
+    /// events carrying a fence older than the session's current holder, which
+    /// closes the brief overlap that expiry alone permits (D45).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fence: Option<u64>,
 }
 
 impl SyncEvent {
@@ -103,7 +108,14 @@ impl SyncEvent {
             kind,
             payload,
             created_at_ms: now_ms(),
+            fence: None,
         }
+    }
+
+    /// Stamp this event with the writer's fencing token.
+    pub fn with_fence(mut self, fence: u64) -> Self {
+        self.fence = Some(fence);
+        self
     }
 }
 

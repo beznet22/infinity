@@ -29,6 +29,10 @@ pub struct LeasePayload {
     pub action: LeaseAction,
     /// Wall-clock expiry. Only meaningful for `claim` and `renew`.
     pub expires_at_ms: u64,
+    /// Monotonic per session. Every claim or renewal increments it; a writer
+    /// holding an older fence has been superseded.
+    #[serde(default)]
+    pub fence: u64,
 }
 
 /// Who holds the session right now.
@@ -36,6 +40,8 @@ pub struct LeasePayload {
 pub struct LeaseState {
     pub owner: DeviceId,
     pub expires_at_ms: u64,
+    /// The token the current holder must stamp on its writes.
+    pub fence: u64,
 }
 
 impl LeaseState {
@@ -52,6 +58,7 @@ pub fn lease_event(
     action: LeaseAction,
     ttl_ms: u64,
     now_ms: u64,
+    fence: u64,
 ) -> SyncEvent {
     let expires_at_ms = match action {
         LeaseAction::Release => 0,
@@ -66,8 +73,22 @@ pub fn lease_event(
             owner: device,
             action,
             expires_at_ms,
+            fence,
         }),
     )
+    .with_fence(fence)
+}
+
+/// The next fence for a session: one more than any seen so far.
+pub fn next_fence(events: &[SyncEvent]) -> u64 {
+    events
+        .iter()
+        .filter(|event| event.kind == EventKind::LeaseClaim)
+        .filter_map(|event| serde_json::from_value::<LeasePayload>(event.payload.clone()).ok())
+        .map(|payload| payload.fence)
+        .max()
+        .unwrap_or(0)
+        + 1
 }
 
 /// The current holder as of `now_ms`, derived from the log alone.
@@ -87,6 +108,7 @@ pub fn current_lease(events: &[SyncEvent], now_ms: u64) -> Option<LeaseState> {
                     Some(LeaseState {
                         owner: payload.owner,
                         expires_at_ms: payload.expires_at_ms,
+                        fence: payload.fence,
                     })
                 } else {
                     None
@@ -122,7 +144,15 @@ mod tests {
         let laptop = device("laptop");
         let phone = device("phone");
 
-        let claim = lease_event(session(), laptop.clone(), 1, LeaseAction::Claim, 1_000, 100);
+        let claim = lease_event(
+            session(),
+            laptop.clone(),
+            1,
+            LeaseAction::Claim,
+            1_000,
+            100,
+            1,
+        );
         let events = vec![claim];
         assert_eq!(
             current_lease(&events, 200).map(|lease| lease.owner),
@@ -134,7 +164,15 @@ mod tests {
         assert_eq!(current_lease(&events, 2_000), None);
         assert!(may_write(&events, &phone, 2_000));
 
-        let renew = lease_event(session(), laptop.clone(), 2, LeaseAction::Renew, 1_000, 500);
+        let renew = lease_event(
+            session(),
+            laptop.clone(),
+            2,
+            LeaseAction::Renew,
+            1_000,
+            500,
+            2,
+        );
         let renewed = vec![renew];
         assert_eq!(
             current_lease(&renewed, 1_200).map(|lease| lease.owner),
@@ -142,7 +180,7 @@ mod tests {
         );
         assert_eq!(current_lease(&renewed, 1_600), None);
 
-        let release = lease_event(session(), laptop, 3, LeaseAction::Release, 1_000, 700);
+        let release = lease_event(session(), laptop, 3, LeaseAction::Release, 1_000, 700, 2);
         assert_eq!(current_lease(&[release], 800), None);
     }
 
@@ -151,8 +189,16 @@ mod tests {
         let laptop = device("laptop");
         let phone = device("phone");
         let events = vec![
-            lease_event(session(), laptop, 1, LeaseAction::Claim, 5_000, 100),
-            lease_event(session(), phone.clone(), 1, LeaseAction::Claim, 5_000, 200),
+            lease_event(session(), laptop, 1, LeaseAction::Claim, 5_000, 100, 1),
+            lease_event(
+                session(),
+                phone.clone(),
+                1,
+                LeaseAction::Claim,
+                5_000,
+                200,
+                2,
+            ),
         ];
         assert_eq!(current_lease(&events, 300).map(|l| l.owner), Some(phone));
     }
@@ -180,6 +226,7 @@ pub struct LeaseGuard {
     session: SessionId,
     device: DeviceId,
     ttl_ms: u64,
+    fence: u64,
 }
 
 impl LeaseGuard {
@@ -197,6 +244,7 @@ impl LeaseGuard {
         }
 
         let seq = store.last_seq(&session).await? + 1;
+        let fence = next_fence(&events);
         let event = lease_event(
             session.clone(),
             device.clone(),
@@ -204,12 +252,14 @@ impl LeaseGuard {
             LeaseAction::Claim,
             ttl_ms,
             now,
+            fence,
         );
         store.append(&event).await?;
         Ok(Some(Self {
             session,
             device,
             ttl_ms,
+            fence,
         }))
     }
 
@@ -217,8 +267,22 @@ impl LeaseGuard {
         &self.device
     }
 
+    /// The token this holder stamps on its writes.
+    pub fn fence(&self) -> u64 {
+        self.fence
+    }
+
     /// Extend the lease from the turn's own heartbeat.
-    pub async fn renew<S: crate::EventStore>(&self, store: &S) -> Result<(), crate::SyncError> {
+    pub async fn renew<S: crate::EventStore>(&mut self, store: &S) -> Result<(), crate::SyncError> {
+        let events = store.events_since(&self.session, 0).await?;
+        let expected = self.fence + 1;
+
+        // If anyone claimed since our last renewal, the next fence is past ours:
+        // we were superseded, so we must not write anything more.
+        if next_fence(&events) != expected {
+            return Err(crate::SyncError::LeaseLost);
+        }
+
         let seq = store.last_seq(&self.session).await? + 1;
         let event = lease_event(
             self.session.clone(),
@@ -227,8 +291,11 @@ impl LeaseGuard {
             LeaseAction::Renew,
             self.ttl_ms,
             crate::now_ms(),
+            expected,
         );
-        store.append(&event).await
+        store.append(&event).await?;
+        self.fence = expected;
+        Ok(())
     }
 
     /// Give the session back so another device can take it immediately.
@@ -241,6 +308,7 @@ impl LeaseGuard {
             LeaseAction::Release,
             self.ttl_ms,
             crate::now_ms(),
+            self.fence,
         );
         store.append(&event).await
     }
@@ -297,13 +365,40 @@ mod guard_tests {
     }
 
     #[tokio::test]
+    async fn a_superseded_holder_cannot_renew() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = FileEventStore::new(dir.path());
+        let laptop = DeviceId::new("laptop");
+        let phone = DeviceId::new("phone");
+
+        // Laptop claims, then lets the lease lapse (zero TTL) so the phone can.
+        let mut laptop_guard = LeaseGuard::acquire(&store, session(), laptop, 0)
+            .await
+            .expect("acquire")
+            .expect("free session");
+        let phone_guard = LeaseGuard::acquire(&store, session(), phone, 60_000)
+            .await
+            .expect("acquire")
+            .expect("expired lease is free");
+        assert_eq!(phone_guard.fence(), laptop_guard.fence() + 1);
+
+        // The laptop no longer holds the session: its renewal must be refused
+        // rather than silently writing a claim it lost.
+        let error = laptop_guard
+            .renew(&store)
+            .await
+            .expect_err("renew must fail");
+        assert!(matches!(error, crate::SyncError::LeaseLost));
+    }
+
+    #[tokio::test]
     async fn renewal_extends_the_hold() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = FileEventStore::new(dir.path());
         let laptop = DeviceId::new("laptop");
         let phone = DeviceId::new("phone");
 
-        let guard = LeaseGuard::acquire(&store, session(), laptop.clone(), 1_000)
+        let mut guard = LeaseGuard::acquire(&store, session(), laptop.clone(), 1_000)
             .await
             .expect("acquire")
             .expect("free session");
