@@ -503,6 +503,13 @@ Asked explicitly; the honest state:
 - **Verified in headless Chrome** (COOP/COEP server on 8128): typing `queued in the browser` and tapping queue produced `1 events in OPFS · 0 visible · 1 queued`; **reloading the page kept the queue entry and the count**, so the data is in OPFS rather than memory.
 - **Limits:** one fixed session (`browser-chat`), no lease acquisition in the page yet (so it never shows a read-only banner from real data), and no relay sync from the browser UI. Those belong with the E2E and wake steps.
 
+## D63 — One script runs the three platforms ✅
+- **What:** `apps/local-first/scripts/e2e.py` exercises the same properties where they apply. Desktop: queue while busy stays out of the transcript, send promotes it, delete-from-here hides the tail, restore brings it back. Browser: a message queued in the page survives a full reload via OPFS. Android: with `ADB_DEVICE` set, the device probe is fetched and must contain a successful sandbox run.
+- **Result:** `desktop {"messages":2,"queue":0}`, `browser {"queue":1,"status":"1 events in OPFS · 0 visible · 1 queued"}`, `android {"probe":{…"infinity-on-android"}}`, `E2E PASS`.
+- **Server handling:** reuses an already-running static server, otherwise starts one and fails loudly; `serve.py` now sets `allow_reuse_address` so back-to-back runs do not collide on TIME_WAIT.
+- **Honest scope:** the legs are not one replicated conversation — each platform uses its own local log. A shared relay run (push from desktop, pull in browser, lease refusal on Android) is the next step, and it needs the relay redeployed, which is an external action.
+- **Android leg depth:** it proves the device responds and its sandbox ran; it does not drive the UI (that was verified separately in D60 with screenshots and a database diff).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

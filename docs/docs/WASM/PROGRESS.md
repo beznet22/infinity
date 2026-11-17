@@ -213,3 +213,4 @@ and be called from JS.
 | 2026-11-17 | H2 | Android UI wired to the live SQLite log: `session_views` + `apply_command`, shared renderer in `dist`. Device: seeded session rendered `queued (2)`; typing + queue produced `queued (3)` and a third `message_queued` row. Browser binding still open (#141). |
 | 2026-11-17 | I1 | JS mirror of `session_view` with a Rust-generated golden fixture; `node test.mjs` parity passes (1 visible message, 1 queued, active truncation). Browser page binding still open (#142). |
 | 2026-11-17 | I2 | Browser page over OPFS: worker-owned SQLite, JS `session_view`, shared renderer, commands as events. Headless Chrome: queue → `1 events in OPFS · 1 queued`; reload preserves it. |
+| 2026-11-17 | J1 | Cross-platform E2E script: desktop (queue/send/truncate/restore), browser (OPFS queue survives reload), Android (device probe with sandbox). `E2E PASS`. Shared-relay scenario still pending. |

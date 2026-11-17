@@ -17,5 +17,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+# Rebind immediately after a run; without this, TIME_WAIT blocks the next one.
+socketserver.TCPServer.allow_reuse_address = True
+
 with socketserver.TCPServer(("127.0.0.1", PORT), Handler) as httpd:
     httpd.serve_forever()
