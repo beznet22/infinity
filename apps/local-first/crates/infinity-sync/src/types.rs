@@ -107,11 +107,22 @@ impl SyncEvent {
     }
 }
 
-/// How far this device has already read or pushed a session.
+/// An event as the relay stored it.
+///
+/// `position` is assigned by the relay and is the **only** valid cross-device
+/// order: the writer's `seq` is per device, so two devices both write 1, 2, 3.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredEvent {
+    pub position: i64,
+    #[serde(flatten)]
+    pub event: SyncEvent,
+}
+
+/// How far this device has already read a session (relay position).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cursor {
-    /// Highest sequence this device has acknowledged for the session.
-    pub last_seq: u64,
+    /// Highest relay position this device has read for the session.
+    pub last_position: i64,
 }
 
 /// Wall-clock milliseconds. Sync ordering never depends on it; leases do.

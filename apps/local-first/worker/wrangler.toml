@@ -1,0 +1,10 @@
+name = "local-first-sync"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+# D1 is the server's store (D32). `database_id` is a placeholder for local dev;
+# replace it with the real id produced by `wrangler d1 create` before deploying.
+[[d1_databases]]
+binding = "DB"
+database_name = "local-first-sync"
+database_id = "00000000-0000-0000-0000-000000000000"

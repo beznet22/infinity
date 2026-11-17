@@ -13,7 +13,9 @@
 use std::path::PathBuf;
 
 use infinity_sync::http::HttpTransport;
-use infinity_sync::{now_ms, DeviceId, EventKind, EventStore, FileEventStore, SessionId, SyncEvent};
+use infinity_sync::{
+    now_ms, CursorStore, DeviceId, EventKind, EventStore, FileEventStore, SessionId, SyncEvent,
+};
 
 struct Args {
     root: PathBuf,
@@ -104,14 +106,29 @@ async fn main() -> Result<(), String> {
         "pull" => {
             let transport = transport.ok_or("pull needs --relay")?;
             let session = args.session.clone().ok_or("pull needs --session")?;
-            let local_last = store.last_seq(&session).await.map_err(|e| e.to_string())?;
-            let events = transport.pull(&session, local_last).await.map_err(|e| e.to_string())?;
-            for event in &events {
-                store.append(event).await.map_err(|e| e.to_string())?;
+            let cursors = CursorStore::new(&args.root, &args.device);
+            let after = cursors
+                .load()
+                .await
+                .map_err(|e| e.to_string())?
+                .get(session.as_str())
+                .copied()
+                .unwrap_or(0);
+
+            let stored = transport.pull(&session, after).await.map_err(|e| e.to_string())?;
+            let mut highest = after;
+            for item in &stored {
+                store.append(&item.event).await.map_err(|e| e.to_string())?;
+                highest = highest.max(item.position);
             }
+            cursors
+                .set(&session, highest)
+                .await
+                .map_err(|e| e.to_string())?;
+
             println!(
                 "{}",
-                serde_json::json!({ "session": session.as_str(), "fetched": events.len(), "last_seq": store.last_seq(&session).await.map_err(|e| e.to_string())? })
+                serde_json::json!({ "session": session.as_str(), "fetched": stored.len(), "position": highest, "events": store.events_since(&session, 0).await.map_err(|e| e.to_string())?.len() })
             );
         }
         "sessions" => {

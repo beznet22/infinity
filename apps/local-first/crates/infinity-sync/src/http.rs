@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{SessionId, SyncEvent};
+use crate::types::{SessionId, StoredEvent, SyncEvent};
 use crate::SyncError;
 
 /// What the relay accepted for a push.
@@ -60,16 +60,16 @@ impl HttpTransport {
         response.json().await.map_err(SyncError::Transport)
     }
 
-    /// Events of one session after `after_seq`, oldest first.
+    /// Events of one session after a relay position, oldest first.
     pub async fn pull(
         &self,
         session: &SessionId,
-        after_seq: u64,
-    ) -> Result<Vec<SyncEvent>, SyncError> {
+        after_position: i64,
+    ) -> Result<Vec<StoredEvent>, SyncError> {
         let response = self
             .client
             .get(format!("{}/v1/sync/pull", self.base_url))
-            .query(&[("session", session.as_str()), ("after", &after_seq.to_string())])
+            .query(&[("session", session.as_str()), ("after", &after_position.to_string())])
             .send()
             .await
             .map_err(SyncError::Transport)?;

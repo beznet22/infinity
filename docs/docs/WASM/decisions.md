@@ -226,6 +226,7 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Decision:** sessions are single-writer. Replication is an immutable **event log** per session plus a **per-device cursor**, with a **session lease** so two devices never run the same session at once (the second forks or waits).
 - **Why not Yjs:** CRDTs solve concurrent edits of shared state. Here the needs are durability, resume and dedupe; an ordered log gives all three, stays queryable, and ports to D1 unchanged. Yjs remains an option for a future *document* surface, scoped to that surface.
 - **Dedupe/idempotency:** writer-assigned UUIDv7 `event_id`; the relay ignores a repeated `(session_id, event_id)`, so retries are free.
+- **Ordering (corrected during implementation):** a writer's `seq` is **per device**, so two devices both produce 1, 2, 3 and `seq` cannot order a session across devices. The relay assigns a monotonic `position` per row; **only `position` is comparable globally**, and per-device cursors track it. `seq` remains useful for local tail reads and for a device's own log.
 - **Compaction:** a `Snapshot` event carries full state; a new device replays from the latest snapshot instead of the whole history.
 - **Stores:** `FileEventStore` (JSONL per session) for desktop/CLI and Android; SQLite in the browser. Both satisfy the same contract; the file store's tests pin the semantics (ordered reads, idempotent append, per-device cursors).
 

@@ -168,7 +168,7 @@ impl CursorStore {
         }
     }
 
-    pub async fn load(&self) -> Result<std::collections::HashMap<String, u64>, SyncError> {
+    pub async fn load(&self) -> Result<std::collections::HashMap<String, i64>, SyncError> {
         match tokio::fs::read_to_string(&self.path).await {
             Ok(raw) => serde_json::from_str(&raw).map_err(SyncError::Encode),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Default::default()),
@@ -176,9 +176,9 @@ impl CursorStore {
         }
     }
 
-    pub async fn set(&self, session: &SessionId, last_seq: u64) -> Result<(), SyncError> {
+    pub async fn set(&self, session: &SessionId, position: i64) -> Result<(), SyncError> {
         let mut cursors = self.load().await?;
-        cursors.insert(session.as_str().to_string(), last_seq);
+        cursors.insert(session.as_str().to_string(), position);
         if let Some(parent) = self.path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
