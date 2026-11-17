@@ -223,7 +223,7 @@ What actually stands between this workspace and a `wasm32-unknown-unknown` build
 
 ### 9.1 Where the workspace stands today
 
-*Status after chunks 0.1–0.3 (2026-11-17): **4 green / 3 red**. The gate below is enforced by `scripts/check-wasm.bash` (wired into `check.bash`), which fails if the set diverges.*
+*Status after chunks 0.1–0.7 (2026-11-17): **7 green / 0 red — Phase 0 complete**. The gate below is enforced by `scripts/check-wasm.bash` (wired into `check.bash`); it now has an empty expected-red set, so any regression fails the suite.*
 
 | Crate | `wasm32` check | Root cause |
 |---|---|---|
@@ -231,9 +231,9 @@ What actually stands between this workspace and a `wasm32-unknown-unknown` build
 | `rap-protocol` | ✅ *(chunk 0.2)* | was ❌: reqwest's wasm fetch futures are **`!Send`** vs `Send`-bounded client traits → fixed with cfg-gated traits (`Send` native / `?Send` wasm) |
 | `infinity-protocol` | ✅ *(chunk 0.2)* | was ❌ transitively via `rap-protocol`. `dirs` **does** compile for wasm; `home_dir()` just resolves to nothing at runtime, so path injection (W9) is a correctness item, not a blocker |
 | `rap-client` | ✅ *(chunk 0.3)* | was ❌: mio rejected the target — tokio `net` + the hyper callback server. Both moved behind `cfg(not(target_arch = "wasm32"))`; the module is gated too |
-| `infinity-agent-core` | ❌ *(3 remaining)* | mio is gone with `rap-client`; now **15 errors from `Send` bounds** on `Tool`/`InputSender`/store traits (they instantiate `H: HttpClient`, which is `?Send` on wasm) + `tokio::time` panics (`system/local/handle.rs:291`, `tools/sleep.rs:100`, `event_processor.rs:5065`) + `std::fs` (`tools/config.rs:125`) — chunk 0.5 |
-| `sandbox-core` | ❌ | mio (tokio `process`/`fs` + axum); deeply native impls: git/jj/rg process spawning, `which`, `tempfile`, unix symlinks |
-| `infinity-mcp-bridge` | ❌ | mio (tokio `process` for `StdioMcpTransport`) + **getrandom 0.3** rejecting wasm32-unknown-unknown until its documented `wasm_js` backend is configured (uuid v4's RNG) |
+| `infinity-agent-core` | ✅ *(chunk 0.5)* | was ❌: 15 `Send`-bound errors — `Tool<M>: Send + Sync` could not hold a `?Send` HTTP client. Fixed by cfg-gating the trait (native `Send + Sync` / wasm `?Send`) plus 11 impl sites. `tokio::time`/`std::fs` compile and fail only at runtime (D18 defers their replacements to Phase 3) |
+| `sandbox-core` | ✅ *(chunk 0.6)* | was ❌: mio via tokio `process`/`fs` + axum, plus process plumbing. Fixed with a default-on `native` feature gating `server`/`git`/`jj`, `SpawnedCommand`/`spawn_command` and 8 native-only deps; browser builds use `--no-default-features` |
+| `infinity-mcp-bridge` | ✅ *(chunk 0.7)* | was ❌: mio via the stdio transport, `McpTransport: Send`, a `Send`-bounded factory alias and `tokio::spawn`. Fixed with the `native` feature, cfg-gated trait/factory, and `spawn_local` in the browser (needs a `LocalSet` at runtime) |
 
 Platform facts these rest on ([rustc platform doc](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html), [tokio #7510](https://github.com/tokio-rs/tokio/pull/7510), [tokio #7550](https://github.com/tokio-rs/tokio/issues/7550)): on `wasm32-unknown-unknown` tokio caps at `sync,macros,io-util,rt,time` (current-thread only): `time` compiles but **panics at runtime**, `net`/`process` don't compile (mio); `std::fs` compiles but always errors; `std::thread::spawn` panics.
 

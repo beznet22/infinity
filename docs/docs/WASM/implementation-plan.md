@@ -65,7 +65,11 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 - **Work:** native-only: git/jj/rg spawning, `which`, `tempfile`, tokio-fs server surface, `tokio::process::Child` in the core type (`sandbox.rs:11`). Portable: `ModeProvider`/`SandboxBackend`/`MetadataStore` + pure types. Keep existing `[target.'cfg(unix)']` nix gating.
 - **Accept:** crate green on wasm with `default-features = false`; host builds unchanged.
 
-### 0.7 `infinity-mcp-bridge` — gate stdio transport (W8)
+### 0.7 `infinity-mcp-bridge` — gate stdio transport (W8) *(as implemented)*
+
+- **Mechanism:** default-on `native` feature (consistent with `sandbox-core`) covering `StdioMcpTransport`, `McpClient::stdio`, `McpToolSet::stdio`, `JsonRpcRequest`, and tokio's `process`/`io-util` features.
+- **Beyond the plan:** stdio gating alone was not sufficient. Also required: `McpTransport` cfg-gated (native `Send` / wasm `?Send`), two `McpTransportFactory` aliases (the `Send` bounds on the boxed future and closure cannot be cfg'd inline), and `tokio::task::spawn_local` for `McpTool::execute` on wasm (requires a `LocalSet` at runtime — Phase 3 wiring).
+- **Verified:** wasm green with `--no-default-features`; native workspace green; crate tests pass; clippy clean in both configurations.
 - **Files:** `src/lib.rs` (`StdioMcpTransport`, 24-94), `Cargo.toml`.
 - **Work:** `#[cfg(not(target_arch = "wasm32"))]` on the stdio transport + `tokio/process`; trait stays portable.
 - **Accept:** crate green on wasm.

@@ -38,14 +38,13 @@ CRATES=(
 
 # Crates still expected to FAIL. Remove entries as Phase 0 chunks land; the gate
 # fails when a crate here starts passing, so the list cannot silently rot.
-EXPECTED_RED=(
-    infinity-mcp-bridge
-)
+# Empty since chunk 0.7: the whole foundation set compiles for wasm.
+EXPECTED_RED=()
 
 is_expected_red() {
     local crate=$1
     local entry
-    for entry in "${EXPECTED_RED[@]}"; do
+    for entry in ${EXPECTED_RED[@]+"${EXPECTED_RED[@]}"}; do
         [ "$entry" = "$crate" ] && return 0
     done
     return 1
@@ -63,13 +62,13 @@ unexpected_green=()
 unexpected_red=()
 
 for crate in "${CRATES[@]}"; do
-    # `sandbox-core` gates its native surface (HTTP server, git/jj plumbing,
-    # process handles) behind a default-on `native` feature; a browser build is
-    # the no-default-features configuration.
-    extra=()
-    if [ "$crate" = "sandbox-core" ]; then
-        extra=(--no-default-features)
-    fi
+    # Crates with a default-on `native` feature (HTTP server, git/jj plumbing,
+    # process handles, stdio MCP transport): a browser build is their
+    # no-default-features configuration. See docs/docs/WASM/README.md.
+    case "$crate" in
+        sandbox-core | infinity-mcp-bridge) extra=(--no-default-features) ;;
+        *) extra=() ;;
+    esac
 
     if cargo check --quiet --target "$TARGET" -p "$crate" "${extra[@]}" > /dev/null 2>&1; then
         if is_expected_red "$crate"; then

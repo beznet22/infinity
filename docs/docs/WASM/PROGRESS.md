@@ -35,7 +35,7 @@ Chunk IDs below are authoritative from `implementation-plan.md`. All work is ⬜
 
 | Phase | Chunks | Scope | Status |
 |---|---|---|---|
-| 0 | 0.1–0.8 | WASM readiness (W1–W10 + CI gate) | 🔶 0.1–0.5 done |
+| 0 | 0.1–0.8 | WASM readiness (W1–W10 + CI gate) | ✅ complete — 7/7 green |
 | 1 | 1.1–1.5 | Core adapter traits + `HostCtx` (D19) | ⬜ |
 | 2 | 2.1–2.4 | Consumer archetype: Android Tauri app | ⬜ |
 | 3 | 3.1–3.4 | Browser runtime (`crates/infinity-wasm`) | ⬜ |
@@ -49,7 +49,7 @@ Promoted decisions (recorded in the plan, echoed into `decisions.md` when each c
 
 Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the `check.bash` wasm step in place.
 
-**Baseline before this work: 1 green / 6 red. Current: 6 green / 1 expected-red.**
+**Baseline before this work: 1 green / 6 red. Current: 7 green / 0 red — Phase 0 complete.**
 
 | # | Work item | Chunk | Files | Status |
 |---|---|---|---|---|
@@ -60,7 +60,7 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | W2 (cont.) | **`?Send` propagation through `Tool`**: cfg-gated trait (native `Send + Sync` / wasm `?Send`) + `cfg_attr` on 11 impl sites (9 agent-core, 1 mcp-bridge, 1 `NoRapHttp`) | 0.5 | `infinity-agent-core/src/tools/{mod,rap_tool,thread,cancel_subscription,sleep}.rs`, `system/builder.rs`, `infinity-mcp-bridge/src/lib.rs` | ✅ |
 | W5+W6 | `SliceTimer` (**D18**), direct `std::fs` removal, gating `system/local/` | 0.5 → **Phase 3** | `infinity-agent-core` | ⏭ deferred — none of these block compilation (`tokio::time` and `std::fs` compile and fail only at runtime; `system/local` has no process/net/thread usage) |
 | W7 | Sandbox trait/impl split — default-on `native` feature gating `server`/`git`/`jj` + `SpawnedCommand`/`spawn_command` and their 8 native-only deps; gate runs the crate with `--no-default-features` | 0.6 | `sandbox-core/{Cargo.toml,src/lib.rs,src/sandbox.rs}`, `scripts/check-wasm.bash` | ✅ |
-| W8 | Gate `StdioMcpTransport` native-only (mio via tokio `process`) | 0.7 | `infinity-mcp-bridge/src/lib.rs` | ⬜ |
+| W8 | Gate the stdio transport behind the default-on `native` feature; cfg-gate `McpTransport` + `McpTransportFactory` (native `Send` / wasm none); `spawn_local` for tool-result delivery in the browser | 0.7 | `infinity-mcp-bridge/{Cargo.toml,src/lib.rs}`, `scripts/check-wasm.bash` | ✅ |
 | — | Sweep + record + exit | 0.8 | all 7 crates | ⬜ |
 
 ---
@@ -113,7 +113,7 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 
 | Gate | Current state (verified) | Target |
 |---|---|---|
-| `cargo check --target wasm32-unknown-unknown` (core set) | **6 green** (all but `infinity-mcp-bridge`) / **1 expected-red** — verified in the worktree | all 7 green (Phase 0 exit) |
+| `cargo check --target wasm32-unknown-unknown` (core set) | **7 green / 0 expected-red** — verified in the worktree | all 7 green (Phase 0 exit) — **reached** |
 | `bash scripts/check-wasm.bash` | ✅ **green** — pins the expected state: fails if a green crate regresses or a red crate turns green unnoticed | stays green while `EXPECTED_RED` shrinks |
 | `check.bash` | wasm step **added**; the suite still aborts at the `jj` prerequisite in this dev env (pre-existing), so the step is exercised directly via the script above | runnable in CI |
 | Native build (`cargo check --workspace --all-targets`) | ✅ **green** after the trait cfg-split (axum `Send` preserved) | stays green after every Phase 0/1 change |
@@ -143,3 +143,5 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | 2026-11-17 | process | Work (docs audit + chunks 0.1–0.5) had been done on `main` in the root checkout; corrected by moving everything into the `../infinity-hybrid` worktree on `feat/wasm-android-hybrid` (overview §1). Root is clean on `main` again. |
 | 2026-11-17 | 0.6 | `sandbox-core` gained a default-on `native` feature gating `server`/`git`/`jj`, `SpawnedCommand`/`SandboxBackend::spawn_command`, and 8 native-only deps (axum, reqwest, similar, which, tempfile, base64, tokio, tracing). Browser builds use `--no-default-features`; the gate passes that flag for this crate. Verified: wasm green, native workspace green, 31 sandbox-core tests pass. Found: `which` 8.0.2 does not compile for wasm at all (`E0046`), reachable only from the gated server. |
 | 2026-11-17 | docs | Added `docs/docs/WASM/README.md` — consumer guide covering the `default-features = false` requirement and its failure modes, RNG features, the target-dependent `Send` bounds, and the runtime-only wasm limits. |
+| 2026-11-17 | 0.7 | `infinity-mcp-bridge` gained the same default-on `native` feature (stdio transport, `tokio/process` + `tokio/io-util`), cfg-gated `McpTransport` and `McpTransportFactory`, and `tokio::task::spawn_local` for tool-result delivery in the browser. `JsonRpcRequest` + the `Serialize` import are native-only (clippy caught both). Gate reached **7 green / 0 expected-red**. Verified: native workspace green, mcp-bridge tests pass, clippy clean with and without default features. |
+| 2026-11-17 | 0.8 | Phase 0 exit verified: wasm gate 7/7 green (empty expected-red set), native `cargo check --workspace --all-targets` green, 141 tests passing across the touched crates (`rap-protocol`, `rap-client`, `infinity-agent-core` 108, `sandbox-core` 31, `infinity-mcp-bridge`), `cargo fmt --check` clean, clippy clean with and without default features. |

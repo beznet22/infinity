@@ -8,6 +8,13 @@ edition = "2024"
 repository = { workspace = true }
 license = "Apache-2.0"
 
+[features]
+default = ["native"]
+# Native-only surface: the stdio MCP transport spawns a child process. Browser
+# builds consume this crate with `default-features = false` (see
+# docs/docs/WASM/README.md).
+native = ["tokio/process", "tokio/io-util"]
+
 [dependencies]
 infinity-agent-core = { path = "../infinity-agent-core", version = "^0.2.0" }
 rap-protocol = { path = "../rap-protocol", version = "^0.2.0" }
@@ -15,7 +22,10 @@ infinity-provider-protocol = { path = "../infinity-provider-protocol", version =
 
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["io-util", "process", "rt"] }
+# `rt` is needed on every target (`tokio::task::spawn_local` in the browser,
+# `tokio::spawn` natively); `process`/`io-util` arrive with the `native`
+# feature above.
+tokio = { workspace = true, features = ["rt"] }
 async-trait = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }

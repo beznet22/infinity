@@ -44,7 +44,14 @@ Notes:
 
 - `scripts/check-wasm.bash` passes `--no-default-features` for `sandbox-core` explicitly, so the readiness gate checks the same configuration a browser build uses.
 - Anything that pulls `sandbox-core` into a wasm target (today: nothing; from Phase 3: `crates/infinity-wasm`) must carry the same flag.
-- The flag is safe on native too: it only drops the server/git/jj surface, which the native backend crates (`sandbox-local`, `sandbox-remote`) enable by default.
+- `infinity-mcp-bridge` uses the same switch for its stdio transport:
+
+  ```toml
+  infinity-mcp-bridge = { path = "../infinity-mcp-bridge", version = "^0.2.0", default-features = false }
+  ```
+
+  With `native` off, `McpClient::stdio` / `McpToolSet::stdio` are not available; the Streamable-HTTP transport stays.
+- The flag is safe on native too: it only drops the server/git/jj (and stdio-MCP) surface, which the native crates enable by default.
 
 ### 2. RNG: getrandom and uuid
 
@@ -85,6 +92,7 @@ impl Tool<M> for MyTool { /* ... */ }
 - A browser cannot bind a socket: `rap_client::callback_server` is gated to native. In-browser callback ingestion is an in-page seam (implementation plan chunk 3.3).
 - `std::fs` and `tokio::time` **compile** for wasm but fail at runtime (`std::fs` always errors; tokio timers panic on this target). `SliceTimer` (decision D18) is the Phase 3 replacement — until it lands, do not invoke `TokioSleepTool` / `TokioSleepUntilTool` / `SleepUntilEventOrInputTool` in a browser.
 - `std::thread::spawn` panics; the wasm runtime is current-thread only.
+- `McpTool::execute` delivers results through `tokio::task::spawn_local` on wasm. The surrounding runtime must therefore run inside a `tokio::task::LocalSet`; calling it outside one panics. This is wired up with the browser runtime in Phase 3.
 
 ---
 
