@@ -10,7 +10,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use infinity_agent_core::stores::{InMemoryConversationStore, InMemoryStateStore};
+use crate::state_store::IndexedDbStateStore;
+use infinity_agent_core::stores::InMemoryConversationStore;
+use infinity_agent_core::traits::StateStore;
 use infinity_agent_core::system::{AgentEvent, AgentSystemBuilder, StaticModel};
 use infinity_provider_protocol::{
     AssistantContent, CompletionError, CompletionRequest, ErrorClass, FinalResponse, Message,
@@ -199,12 +201,13 @@ async fn run_turn(
         .await
         .map_err(|error| format!("model setup: {error}"))?;
 
-    let system = AgentSystemBuilder::new_local(
-        InMemoryConversationStore::new(),
-        InMemoryStateStore::new(),
-        model,
-    )
-    .start();
+    // State (processed ids, metadata, subscriptions) is durable in IndexedDB;
+    // the conversation store is still in-memory until its actor lands.
+    let state_store = IndexedDbStateStore::open()
+        .await
+        .map_err(|error| format!("state store: {error}"))?;
+    let system =
+        AgentSystemBuilder::new_local(InMemoryConversationStore::new(), state_store, model).start();
 
     let mut thread = system.thread_builder().launch().await;
     thread
@@ -260,6 +263,41 @@ pub async fn run_openai_compatible_turn(
     let local = tokio::task::LocalSet::new();
     local
         .run_until(run_turn(Arc::new(provider), &model, prompt))
+        .await
+        .map_err(|error| JsValue::from_str(&error))
+}
+
+/// Read-modify-read through the durable state store, so a page reload can prove
+/// the data survived.
+#[wasm_bindgen]
+pub async fn state_probe() -> Result<String, JsValue> {
+    console_error_panic_hook::set_once();
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let store = IndexedDbStateStore::open()
+                .await
+                .map_err(|error| error.to_string())?;
+            let thread = rap_protocol::ThreadId::new("probe-thread");
+
+            let before = store
+                .get_processed_ids(&thread)
+                .await
+                .map_err(|error| error.to_string())?
+                .len();
+            let id = format!("probe-{}", js_sys::Date::now());
+            store
+                .add_processed_message_ids(&thread, vec![id])
+                .await
+                .map_err(|error| error.to_string())?;
+            let after = store
+                .get_processed_ids(&thread)
+                .await
+                .map_err(|error| error.to_string())?
+                .len();
+
+            Ok::<String, String>(format!("before={before} after={after}"))
+        })
         .await
         .map_err(|error| JsValue::from_str(&error))
 }

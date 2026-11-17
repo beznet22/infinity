@@ -306,6 +306,14 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **B1 landed:** `SimpleHttpClient::with_client`, `HttpMcpTransport::with_client`, `McpClient::http_with_client`, and the Android host now assembles its RAP client with the portable TLS client instead of `new()`. This closes the D21/D34 class of "transport built its own client".
 - **Measured bundle at this revision:** wasm 3,920,352 B raw / 1,029,467 B gzip + 31,828 B JS.
 
+## D38 — Durable browser storage without the `?Send` refactor: an actor handle ✅
+- **Problem:** the store traits require `Send + Sync`, but IndexedDB handles and their futures are `!Send` (D27). Relaxing the traits alone fails because the core's async functions require `Send` futures.
+- **Decision:** keep the core unchanged and give the browser a **`Send + Sync` handle**. `IndexedDbStateStore` owns only a `tokio::sync::mpsc::Sender`; the IndexedDB connection lives in a task pinned to the page's `LocalSet`. Each trait method is a request/response round-trip through a `oneshot`, so no `!Send` future is ever held across an await in the caller.
+- **Why not `?Send` propagation now:** it is a core-wide refactor; the actor achieves the same capability at a fraction of the risk. The `?Send` work remains valid for stores that must be `!Send` *by type*, but nothing in the browser needs that today.
+- **Verified on device (headless Chrome, page reload):** `state_probe()` returned `before=0 after=1`, then after a reload `before=1 after=2` — the state survived the reload. Turns now run with `IndexedDbStateStore` supplying processed ids, metadata, subscriptions and pending choices.
+- **idb 0.6 API notes (each cost a compile cycle):** `event.database()` comes from the `DatabaseEvent` **trait**, which must be imported; `ObjectStore::get` resolves to `Option<JsValue>` (absent key); `put` resolves to the key, not the value; `VersionChangeEvent` itself only exposes versions.
+- **Remaining:** the same actor for `ConversationStore` (history) — still in-memory in the browser — and optionally a SQLite/OPFS backend behind the same handle. Neither needs the core to change.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
