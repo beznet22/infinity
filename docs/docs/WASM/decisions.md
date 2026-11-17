@@ -482,6 +482,14 @@ Asked explicitly; the honest state:
 - **Verified in headless Chrome** with a two-session fixture: banner reads `laptop is writing — read-only`, transcript shows both messages, queue count 1, composer and send are disabled while read-only, the badge reads `2 versions`, and clicking emitted exactly `versions`, `edit`, `restore`, `dequeue`, `select`, `enqueue` in that order. Switching to the writable session re-enables the composer.
 - **Limit, stated plainly:** this is the renderer, not the product. It is not yet fed by live data on Android or in the browser (todo #140), and there is no pagination or virtualised transcript for long sessions.
 
+## D60 — Android UI is wired to the live log ✅ (browser still open)
+- **Commands:** `session_views` returns `session_view()` for every session; `apply_command` takes the renderer's commands (`send`, `enqueue`, `dequeue`, `edit`, `restore`) and appends the matching event with the lease fence when this device holds it.
+- **Page:** `dist/index.html` loads the shared renderer and replaces the probe button; no platform logic in the UI beyond `invoke`.
+- **Verified on the SM-T875:** seeded log rendered `android-chat` with `queued (2)` and an enabled composer; typing `typed_in_ui` and tapping **queue** produced `queued (3)` in the UI and a third `message_queued` row in the pulled database.
+- **Fixed while testing:** an empty transcript used to say "messages were deleted" even when nothing had been sent; it now distinguishes deleted from not-yet-sent.
+- **Not done:** the browser has no live binding yet. It needs either a wasm export of `session_view` (blocked by `infinity-sync`'s tokio/rusqlite deps) or a JS port with parity tests — that choice is todo #141, not a decision made here.
+- **Also found:** `cargo check` for the host fails in the plugin's desktop path (`InfinityAndroid<R>` vs a non-generic desktop struct). The Android target builds; the desktop path is a latent bug worth its own fix.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

@@ -83,6 +83,171 @@ async fn probe() -> Result<HostHealth, String> {
     })
 }
 
+/// All log mutations the UI can request. Mirrors the commands the shared
+/// renderer emits, so the frontend needs no platform-specific logic (D59).
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum UiCommand {
+    Send { session: String, text: String },
+    Enqueue { session: String, text: String },
+    Dequeue { event: String },
+    Edit { event: String, text: String },
+    Restore { truncation: String },
+}
+
+/// Tauri command: the canonical view of every session, straight from the log.
+#[tauri::command]
+async fn session_views(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    views_for(&app).await
+}
+
+/// Build every session view from the live log.
+async fn views_for(app: &tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let dir = ui_data_dir(app)?;
+    let store = open_log(&dir)?;
+    let device = read_sync_device(&dir);
+    let mut views = Vec::new();
+    for session in store.sessions().await.map_err(|e| e.to_string())? {
+        let events = store
+            .events_since(&session, 0)
+            .await
+            .map_err(|e| e.to_string())?;
+        views.push(infinity_sync::session_view(
+            &session,
+            &events,
+            &device,
+            infinity_sync::now_ms(),
+        ));
+    }
+    serde_json::to_value(views).map_err(|e| e.to_string())
+}
+
+/// Tauri command: apply one renderer command to the log.
+#[tauri::command]
+async fn apply_command(
+    app: tauri::AppHandle,
+    command: UiCommand,
+) -> Result<serde_json::Value, String> {
+    let dir = ui_data_dir(&app)?;
+    let store = open_log(&dir)?;
+    let device = read_sync_device(&dir);
+
+    let parse_id = |text: &str| -> Result<uuid::Uuid, String> {
+        text.parse().map_err(|_| format!("not a message id: {text}"))
+    };
+
+    match command {
+        UiCommand::Send { session, text } => {
+            let session = infinity_sync::SessionId::new(session);
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            if infinity_sync::queue(&events).is_empty() && !text.trim().is_empty() {
+                // Nothing queued: write it directly. The probe drains the queue
+                // and appends the assistant reply when a model is configured.
+                let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+                let event = infinity_sync::message_event(
+                    session.clone(),
+                    device.clone(),
+                    seq,
+                    infinity_sync::EventKind::UserMessage,
+                    text,
+                    None,
+                    None,
+                );
+                append(&store, &session, &device, event).await?;
+            }
+        }
+        UiCommand::Enqueue { session, text } => {
+            let session = infinity_sync::SessionId::new(session);
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let event = infinity_sync::enqueue_event(session.clone(), device.clone(), seq, text, None);
+            append(&store, &session, &device, event).await?;
+        }
+        UiCommand::Dequeue { event } => {
+            let id = parse_id(&event)?;
+            let (session, seq) = locate(&store, id).await?;
+            let target = infinity_sync::dequeue_event(session.clone(), device.clone(), seq, id);
+            append(&store, &session, &device, target).await?;
+        }
+        UiCommand::Edit { event, text } => {
+            let id = parse_id(&event)?;
+            let (session, seq) = locate(&store, id).await?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            let original = infinity_sync::message(&events, id)
+                .ok_or_else(|| "no message with that id".to_owned())?;
+            let edited = infinity_sync::message_event(
+                session.clone(),
+                device.clone(),
+                seq,
+                infinity_sync::EventKind::UserMessage,
+                text,
+                original.reply_to,
+                Some(id),
+            );
+            append(&store, &session, &device, edited).await?;
+        }
+        UiCommand::Restore { truncation } => {
+            let id = parse_id(&truncation)?;
+            let (session, seq) = locate(&store, id).await?;
+            let event = infinity_sync::restore_event(session.clone(), device.clone(), seq, id);
+            append(&store, &session, &device, event).await?;
+        }
+    }
+
+    views_for(&app).await
+}
+
+/// The app's data dir as seen by the UI commands.
+fn ui_data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path().app_data_dir().map_err(|error| error.to_string())
+}
+
+/// The SQLite log the UI reads and writes.
+fn open_log(dir: &std::path::Path) -> Result<infinity_sync::SqliteEventStore, String> {
+    infinity_sync::SqliteEventStore::open(dir.join("sync/events.sqlite"))
+        .map_err(|error| format!("open store: {error}"))
+}
+
+/// Append with the lease fence stamped when this device holds it.
+async fn append(
+    store: &infinity_sync::SqliteEventStore,
+    session: &infinity_sync::SessionId,
+    device: &infinity_sync::DeviceId,
+    event: infinity_sync::SyncEvent,
+) -> Result<(), String> {
+    let events = store.events_since(session, 0).await.map_err(|e| e.to_string())?;
+    let stamped = match infinity_sync::current_lease(&events, infinity_sync::now_ms()) {
+        Some(lease) if &lease.owner == device => event.with_fence(lease.fence),
+        _ => event,
+    };
+    store.append(&stamped).await.map_err(|e| e.to_string())
+}
+
+/// Find a session and the next seq for an event id.
+async fn locate(
+    store: &infinity_sync::SqliteEventStore,
+    id: uuid::Uuid,
+) -> Result<(infinity_sync::SessionId, u64), String> {
+    for session in store.sessions().await.map_err(|e| e.to_string())? {
+        let events = store
+            .events_since(&session, 0)
+            .await
+            .map_err(|e| e.to_string())?;
+        let known: std::collections::HashSet<_> =
+            events.iter().map(|event| event.event_id).collect();
+        if known.contains(&id) {
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            return Ok((session, seq));
+        }
+    }
+    Err(format!("event {id} not found in any session"))
+}
+
 /// Tauri command: run the probe on demand (used by the UI button).
 #[tauri::command]
 async fn host_health() -> Result<HostHealth, String> {
@@ -796,7 +961,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![host_health])
+        .invoke_handler(tauri::generate_handler![host_health, session_views, apply_command])
         .run(tauri::generate_context!())
         .expect("bug: failed to run the Tauri application");
 }

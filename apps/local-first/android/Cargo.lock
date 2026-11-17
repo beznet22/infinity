@@ -2206,6 +2206,7 @@ dependencies = [
  "tauri-plugin-infinity-android",
  "tauri-plugin-notification",
  "tokio",
+ "uuid",
  "webpki-roots",
 ]
 

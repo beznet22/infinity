@@ -111,7 +111,14 @@ export function renderThreads(root, state, handlers) {
   const transcript = el("ol", { className: "transcript", "data-testid": "transcript" });
   for (const message of active.messages) transcript.append(renderTranscript(message, onCommand));
   if (active.messages.length === 0) {
-    transcript.append(el("li", { className: "empty", textContent: "nothing visible — messages were deleted" }));
+    // An empty transcript can mean "deleted" or "nothing sent yet": say which.
+    const deleted = active.truncations.some((entry) => entry.active);
+    transcript.append(
+      el("li", {
+        className: "empty",
+        textContent: deleted ? "nothing visible — messages were deleted" : "no messages yet",
+      }),
+    );
   }
   root.append(transcript);
 
