@@ -49,5 +49,6 @@ webpki-roots = "1"
 tauri-plugin-infinity-android = { path = "../crates/tauri-plugin-infinity-android" }
 # App-layer sync (event log + relay client); see apps/local-first/crates/infinity-sync.
 infinity-sync = { path = "../crates/infinity-sync", features = ["http"] }
+infinity-wasm-sandbox = { path = "../crates/infinity-wasm-sandbox" }
 # Notifications use the official plugin; Android 13+ needs POST_NOTIFICATIONS.
 tauri-plugin-notification = "2"

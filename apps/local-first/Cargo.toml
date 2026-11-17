@@ -4,7 +4,7 @@
 # core; this app owns its replication model. It repeats the small subset of
 # workspace settings it needs so it can be copied into another codebase whole.
 [workspace]
-members = ["crates/infinity-sync", "cli"]
+members = ["crates/infinity-sync", "crates/infinity-wasm-sandbox", "cli"]
 # Needs `tauri` (and a desktop webkit stack on the host), so it is built by the
 # Android app that consumes it, never by the archetype workspace.
 exclude = ["crates/tauri-plugin-infinity-android"]

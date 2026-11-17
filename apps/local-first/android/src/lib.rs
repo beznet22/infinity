@@ -728,6 +728,23 @@ pub fn run() {
                     };
                     let _ = std::fs::write(dir.join("probe.json"), payload);
 
+                    // Tool isolation proof, run on every launch: a plain tool, one
+                    // that wants WASI, and one that never returns.
+                    let report: serde_json::Map<String, serde_json::Value> =
+                        infinity_wasm_sandbox::self_test()
+                            .into_iter()
+                            .map(|(name, outcome)| {
+                                let value = match outcome {
+                                    Ok(value) => serde_json::json!({ "ok": value }),
+                                    Err(error) => serde_json::json!({ "denied": error }),
+                                };
+                                (name.to_owned(), value)
+                            })
+                            .collect();
+                    let sandbox = serde_json::to_string_pretty(&report)
+                        .unwrap_or_else(|error| format!("{{\"error\":\"{error}\"}}"));
+                    let _ = std::fs::write(dir.join("sandbox.json"), sandbox);
+
                     // The conversation probe only runs when a config was pushed.
                     if dir.join("chat-config.json").exists() {
                         // Reliability layer: keeps the process (and the lease

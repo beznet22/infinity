@@ -446,6 +446,14 @@ Asked explicitly; the honest state:
 - **Cost:** the view is rebuilt per call, so it is linear in the session. Fine for local logs; pagination or caching belongs with the UI if sessions get large.
 - **Limit:** today only the CLI consumes it. The browser will call the same function through wasm and Android through a Tauri command in the UI step — until then the contract is pinned by tests, not by a second implementation.
 
+## D55 — Android runs tools in wasmi with no host imports ✅
+- **Crate:** `apps/local-first/crates/infinity-wasm-sandbox` (app-layer, host-testable). `run(bytes)` compiles, refuses any module that imports anything, caps linear memory at 1 MiB and bounds work with a 10M fuel budget, then calls the exported `run() -> i32`.
+- **Why no imports:** with an empty import set there is no path to the filesystem, the network, the clock or the environment — the denial is structural, not a policy check that can be bypassed.
+- **Tests (host, 4):** a plain module returns 42; a WASI `fd_write` import is refused with the import named; a non-terminating loop traps on fuel; garbage bytes are rejected at compile.
+- **On-device proof:** every launch runs three embedded modules and writes `sandbox.json`. On the SM-T875: `{"benign":{"ok":42},"hostile":{"denied":"imports wasi_snapshot_preview1.fd_write, the sandbox has none"},"spin":{"denied":"trap: all fuel consumed by WebAssembly"}}`.
+- **Cost:** wasmi is embedded only on Android (the browser engine is the sandbox there, D29). The APK-size delta was not isolated this run; it belongs in the Step 7 budget.
+- **Limit:** this is the executor, not the tool registry. Tools are not yet loaded dynamically or shipped as separate modules; the probe proves the isolation boundary that such a registry will use.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
