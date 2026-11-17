@@ -7,10 +7,17 @@ edition = "2024"
 repository = { workspace = true }
 license = "Apache-2.0"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 infinity-host = { path = "../infinity-host", version = "^0.2.0", default-features = false }
 rap-client = { path = "../rap-client", version = "^0.2.0" }
 infinity-agent-core = { path = "../infinity-agent-core", version = "^0.2.0" }
+infinity-provider-protocol = { path = "../infinity-provider-protocol", version = "^0.2.0" }
+async-trait = { workspace = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+serde_json = { workspace = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 tokio = { workspace = true, features = ["time", "macros", "rt"] }
@@ -20,6 +27,11 @@ tokio = { workspace = true, features = ["time", "macros", "rt"] }
 # is no tokio timer driver in a browser. wasmtimer implements the same API over
 # `performance.now()` + `setTimeout`.
 wasmtimer = "0.4"
+tokio = { workspace = true, features = ["rt", "macros", "sync"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+reqwest = { workspace = true }
 
 [lints]
 workspace = true

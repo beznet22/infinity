@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>infinity-wasm turn</title>
+<pre id="out">running…</pre>
+<script type="module">
+  import init, { run_smoke_turn, run_openrouter_turn } from "./pkg/infinity_wasm.js";
+  const out = document.getElementById("out");
+  try {
+    await init();
+    // The host injects this before the page loads; nothing is bundled.
+    const key = window.__openrouterKey;
+    const reply = key
+      ? await run_openrouter_turn(key, "inclusionai/ling-3.2-flash:free",
+          "Reply with exactly: infinity-browser-openrouter-ok")
+      : await run_smoke_turn("hello from the browser");
+    out.textContent = "reply: " + reply;
+    window.__turnResult = { ok: true, mode: key ? "openrouter" : "mock", reply };
+  } catch (error) {
+    out.textContent = "error: " + error;
+    window.__turnResult = { ok: false, error: String(error) };
+  }
+</script>

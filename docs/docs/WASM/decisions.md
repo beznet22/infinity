@@ -250,6 +250,27 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Build script:** the Android build recipe now lives in `scripts/build-apk.sh`, which validates `JAVA_HOME` (a stale `/opt/android-studio/jbr` was overriding a working JDK), sets the NDK linker env (otherwise cargo falls back to `cc`), and `cd`s to its own directory (running it from another cwd made pnpm look for a manifest in the root checkout).
 - **One session, three devices:** the same `cloud1` session is readable from the CLI, the phone, and the browser, with each device pushing its own events and pulling the rest.
 
+## D35 — The fork's core runs in a browser, with a real model ✅
+- **What ran:** `crates/infinity-wasm` compiled with `wasm-pack --target web`, loaded in headless Chrome. Two entry points:
+  - `run_smoke_turn` — full `AgentSystemBuilder` → local driver → thread → `StaticModel`, answered by a deterministic mock provider. Result: `{"ok": true, "reply": "infinity-wasm-turn-ok"}`.
+  - `run_openrouter_turn(api_key, model, prompt)` — the same turn through **OpenRouter**, keyed at runtime. Result: `{"ok": true, "mode": "openrouter", "reply": "infinity-browser-openrouter-ok"}`.
+- **No tokio runtime:** the local system is `!Send` (D15), so it runs inside a `LocalSet::run_until` awaited directly from a `wasm-bindgen` future. A successful turn never touches `tokio::time`; only the retry paths do, which is why the mock and real turns both work.
+- **CORS:** OpenRouter serves the browser directly (verified `200` from the page with `Authorization: Bearer`). Providers that do not send CORS headers cannot be called this way — they need the Worker relay as a proxy. The Kimchi endpoint was not tested from the browser for this reason.
+- **`!Send` bridge inside `async_trait`:** `ModelProvider` requires `Send` futures, but reqwest's wasm response is `!Send` (a JS promise). The fetch therefore runs in `wasm_bindgen_futures::spawn_local` and hands its result back through a `tokio::sync::mpsc` channel; the trait method only awaits a `Send` receiver. This is the pattern to reuse until D27's `?Send` propagation lands.
+- **Key handling:** injected with CDP `Page.addScriptToEvaluateOnNewDocument`, so it exists only in that tab's memory. Never written to a file, never committed.
+- **Bundle (release, after `wasm-pack` + `wasm-opt`):**
+
+| Artifact | raw | gzip |
+|---|---|---|
+| `infinity_wasm_bg.wasm` (mock only) | 3,593,253 | 891,975 |
+| `infinity_wasm_bg.wasm` (+ OpenRouter/reqwest) | **3,919,251** | **1,028,494** |
+| extra `wasm-opt -Oz` pass | 3,770,160 | 1,026,769 |
+| JS glue | 31,456 | — |
+| debug build (for reference) | 9,149,331 | 2,103,705 |
+
+- **Where the bytes go** (pre-bindgen release artifact, 5,820,847 B): `.rodata` 1,267,594 (21.8%), name section 657,334 (11.3%, stripped in the package), `__wasm_bindgen_unstable` 284,189 (4.9%), **Rhai** packages/parser ≈ 190 KB visible plus its `.rodata` share, `chrono-tz` tables 22,781, `infinity_agent_core::run_completion` 27,935, remainder spread over 8,803 items.
+- **Next size lever:** Rhai and `chrono-tz` are the only clearly removable contributors. If the browser never evaluates Rhai scripts or formats timezones, gating them behind a feature is worth more than another `-Oz` pass (which buys ~4%).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

@@ -18,6 +18,9 @@ pub const IS_BROWSER_BUILD: bool = cfg!(target_family = "wasm");
 
 pub mod timer;
 
+#[cfg(target_family = "wasm")]
+pub mod browser;
+
 pub use timer::{SliceTimer, browser_timer};
 
 /// The sandbox backend this build can host.
