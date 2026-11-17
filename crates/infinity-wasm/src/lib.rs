@@ -19,6 +19,8 @@ pub const IS_BROWSER_BUILD: bool = cfg!(target_family = "wasm");
 pub mod timer;
 
 #[cfg(target_family = "wasm")]
+pub mod conversation_store;
+#[cfg(target_family = "wasm")]
 pub mod state_store;
 
 #[cfg(target_family = "wasm")]

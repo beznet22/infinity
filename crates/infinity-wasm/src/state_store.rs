@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use wasm_bindgen::JsValue;
 
-const DB_NAME: &str = "infinity-agent";
+const DB_NAME: &str = "infinity-agent-state";
 const STORE: &str = "thread_state";
 
 /// Errors surfaced by the browser state store.

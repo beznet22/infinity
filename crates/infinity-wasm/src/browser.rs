@@ -11,8 +11,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use crate::state_store::IndexedDbStateStore;
-use infinity_agent_core::stores::InMemoryConversationStore;
-use infinity_agent_core::traits::StateStore;
+use crate::conversation_store::IndexedDbConversationStore;
+use infinity_agent_core::message::InfinityMessage;
+use infinity_agent_core::traits::{ConversationStore, StateStore};
 use infinity_agent_core::system::{AgentEvent, AgentSystemBuilder, StaticModel};
 use infinity_provider_protocol::{
     AssistantContent, CompletionError, CompletionRequest, ErrorClass, FinalResponse, Message,
@@ -201,13 +202,16 @@ async fn run_turn(
         .await
         .map_err(|error| format!("model setup: {error}"))?;
 
-    // State (processed ids, metadata, subscriptions) is durable in IndexedDB;
-    // the conversation store is still in-memory until its actor lands.
+    // Both stores are durable in IndexedDB, each behind a `Send + Sync` actor
+    // handle (D38); the core cannot tell them from the in-memory ones.
     let state_store = IndexedDbStateStore::open()
         .await
         .map_err(|error| format!("state store: {error}"))?;
+    let conversation_store = IndexedDbConversationStore::open()
+        .await
+        .map_err(|error| format!("conversation store: {error}"))?;
     let system =
-        AgentSystemBuilder::new_local(InMemoryConversationStore::new(), state_store, model).start();
+        AgentSystemBuilder::new_local(conversation_store, state_store, model).start();
 
     let mut thread = system.thread_builder().launch().await;
     thread
@@ -292,6 +296,52 @@ pub async fn state_probe() -> Result<String, JsValue> {
                 .map_err(|error| error.to_string())?;
             let after = store
                 .get_processed_ids(&thread)
+                .await
+                .map_err(|error| error.to_string())?
+                .len();
+
+            Ok::<String, String>(format!("before={before} after={after}"))
+        })
+        .await
+        .map_err(|error| JsValue::from_str(&error))
+}
+
+/// Append one message to a fixed thread and report the history length, so a
+/// reload can prove that conversation history survived.
+#[wasm_bindgen]
+pub async fn history_probe() -> Result<String, JsValue> {
+    console_error_panic_hook::set_once();
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let store = IndexedDbConversationStore::open()
+                .await
+                .map_err(|error| error.to_string())?;
+            let thread = rap_protocol::ThreadId::new("history-probe");
+            store
+                .ensure_root_thread(&thread)
+                .await
+                .map_err(|error| error.to_string())?;
+
+            let before = store
+                .load_history_up_to(&thread, None, None)
+                .await
+                .map_err(|error| error.to_string())?
+                .len();
+            store
+                .append_messages(
+                    &thread,
+                    vec![(
+                        InfinityMessage::User {
+                            content: UserContent::text(format!("probe-{}", js_sys::Date::now())),
+                        },
+                        format!("probe-{}", js_sys::Date::now()),
+                    )],
+                )
+                .await
+                .map_err(|error| error.to_string())?;
+            let after = store
+                .load_history_up_to(&thread, None, None)
                 .await
                 .map_err(|error| error.to_string())?
                 .len();

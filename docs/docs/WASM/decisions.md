@@ -314,6 +314,14 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **idb 0.6 API notes (each cost a compile cycle):** `event.database()` comes from the `DatabaseEvent` **trait**, which must be imported; `ObjectStore::get` resolves to `Option<JsValue>` (absent key); `put` resolves to the key, not the value; `VersionChangeEvent` itself only exposes versions.
 - **Remaining:** the same actor for `ConversationStore` (history) — still in-memory in the browser — and optionally a SQLite/OPFS backend behind the same handle. Neither needs the core to change.
 
+## D39 — Durable conversation history, and the IDB versioning trap ✅
+- **What:** `IndexedDbConversationStore` implements the full `ConversationStore` trait (root bootstrapping, history slicing, append, spawn bookkeeping, ancestor chain, compaction summaries) behind the same `Send + Sync` actor handle as the state store. Semantics are mirrored method-for-method from `InMemoryConversationStore`, so the core cannot tell them apart.
+- **Trap found by testing (first attempt hung):** two stores opened the **same database at the same version 1**. Only the first open fires `on_upgrade_needed`, so the second store's object store was never created — and its transaction failed, leaving the page waiting forever. Fix: one database per store (`infinity-agent-state`, `infinity-agent-history`). Object stores can only be created in an upgrade, so sharing a DB across independent features couples their versions.
+- **Verified in headless Chrome across a reload:**
+  `state: before=0 after=1`, `history: before=0 after=1`, mock turn ok → reload → `state: 1→2`, `history: 1→2`. Both durabilities **PASS**, and turns now run with both stores backed by IndexedDB.
+- **Consequence:** the browser's storage is now the core's own stores, not a JS side path. A SQLite/OPFS backend can be swapped behind the same handle later if query needs appear; nothing in the core changes.
+- **Remaining browser work:** the Worker-isolated tool sandbox and the wake path (Web Push + RAP callbacks).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

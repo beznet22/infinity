@@ -3,13 +3,17 @@
 <title>infinity-wasm turn</title>
 <pre id="out">running…</pre>
 <script type="module">
-  import init, { run_smoke_turn, run_openai_compatible_turn, state_probe } from "./pkg/infinity_wasm.js";
+  import init, { run_smoke_turn, run_openai_compatible_turn, state_probe, history_probe } from "./pkg/infinity_wasm.js";
   const out = document.getElementById("out");
   try {
     await init();
     // The host injects `window.__llm = { baseUrl, apiKey, model }` before load.
-    const probe = await state_probe();
-    window.__stateResult = { ok: true, probe };
+    window.__stateResult = await state_probe()
+      .then((probe) => ({ ok: true, probe }))
+      .catch((error) => ({ ok: false, error: String(error) }));
+    window.__historyResult = await history_probe()
+      .then((probe) => ({ ok: true, probe }))
+      .catch((error) => ({ ok: false, error: String(error) }));
     const llm = window.__llm;
     const reply = llm && llm.apiKey
       ? await run_openai_compatible_turn(
