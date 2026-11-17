@@ -490,6 +490,13 @@ Asked explicitly; the honest state:
 - **Not done:** the browser has no live binding yet. It needs either a wasm export of `session_view` (blocked by `infinity-sync`'s tokio/rusqlite deps) or a JS port with parity tests — that choice is todo #141, not a decision made here.
 - **Also found:** `cargo check` for the host fails in the plugin's desktop path (`InfinityAndroid<R>` vs a non-generic desktop struct). The Android target builds; the desktop path is a latent bug worth its own fix.
 
+## D61 — A JS mirror of the view, pinned by a Rust golden fixture ✅
+- **Why a mirror:** `infinity-sync` cannot compile for wasm32 (tokio's fs and rusqlite are native-only), so the browser cannot call `session_view()` directly. The alternatives were a crate split (pure folds vs backends) or a JS port; the port was chosen for this step because it is testable today without restructuring the crate.
+- **Fixture:** `cargo run -p infinity-sync --example view_fixture` emits `browser/view/fixtures/view-golden.json` — a deterministic log (fixed UUIDs) plus the `view` Rust computes for it. The scenario covers a surviving message, an edit group, a queue entry, a dequeue, and an active truncation.
+- **Parity test:** `node browser/view/test.mjs` runs the JS fold over the same events and requires structural equality with the Rust view (keys sorted). It passes: `1 message, 1 queued`.
+- **Risk, stated plainly:** two implementations can drift. The fixture is the guard; a future change to the Rust fold must regenerate the fixture and update the JS in the same commit, and a crate split would remove the mirror entirely.
+- **Not done:** the browser still has no page consuming this fold from wa-sqlite/OPFS. That wiring (plus a reload-persistence test) is todo #142.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
