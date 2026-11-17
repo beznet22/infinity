@@ -214,3 +214,4 @@ and be called from JS.
 | 2026-11-17 | I1 | JS mirror of `session_view` with a Rust-generated golden fixture; `node test.mjs` parity passes (1 visible message, 1 queued, active truncation). Browser page binding still open (#142). |
 | 2026-11-17 | I2 | Browser page over OPFS: worker-owned SQLite, JS `session_view`, shared renderer, commands as events. Headless Chrome: queue → `1 events in OPFS · 1 queued`; reload preserves it. |
 | 2026-11-17 | J1 | Cross-platform E2E script: desktop (queue/send/truncate/restore), browser (OPFS queue survives reload), Android (device probe with sandbox). `E2E PASS`. Shared-relay scenario still pending. |
+| 2026-11-17 | WA1 | WhatsApp automation verified: read retry works (29 messages), dry-run types into the composer, and a real user-requested message was sent to GreatLover via CDP (1,288 chars, confirmed recipient and history). Fixed hangs on missing rows and the composer focus bug. |

@@ -510,6 +510,16 @@ Asked explicitly; the honest state:
 - **Honest scope:** the legs are not one replicated conversation — each platform uses its own local log. A shared relay run (push from desktop, pull in browser, lease refusal on Android) is the next step, and it needs the relay redeployed, which is an external action.
 - **Android leg depth:** it proves the device responds and its sandbox ran; it does not drive the UI (that was verified separately in D60 with screenshots and a database diff).
 
+## D64 — WhatsApp automation verified; real send to GreatLover ✅
+- **Blocking fixes found by testing:**
+  - `tapFirstChat` never called back when no row existed, so `whatsappRead`/`whatsappSend` hung forever on an unlinked account. Both now reject with a clear message.
+  - The read retry gave up after ~5.6 s; the first open on a linked device took longer, so it now retries up to 16 s.
+  - Typing into the composer without a proper focus/selection left only `"
+"`. The path now focuses and selects before inserting, reports a preview, and refuses to tap Send when the composer holds fewer characters than the message.
+- **Verified on the SM-T875:** pairing code `KEQ8-MZAL`, then `chatList: true`, `chatRows: 26`; `whatsappRead` returned 29 messages from the first row; the dry run reported `drafted: true` (initially `chars: 1`, which exposed the focus bug).
+- **Real send, user-requested:** an encouraging message signed "Edapex" was sent to the chat **GreatLover**. Recipient was confirmed (`#main header` = `GreatLover`) before the click, typed text was 1,288 characters, the composer cleared, and the message appears in the conversation history.
+- **Method, honestly:** the successful send used CDP (`Input.insertText` + `Input.dispatchMouseEvent`) through the same WebView the plugin drives. The plugin's own path is fixed but was not the one that delivered this message; a direct `whatsapp_send` retry with the fixed build is the follow-up.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

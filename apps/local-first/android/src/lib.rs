@@ -872,6 +872,67 @@ pub fn run() {
                             serde_json::to_string_pretty(&payload).unwrap_or_default(),
                         );
                     }
+
+                    // Automation verification: marker + `whatsapp-automation.json`
+                    // (`{chat, limit, text, dry_run}`). Exercises the state, read
+                    // (with its in-page retry) and send paths end to end.
+                    if dir.join("whatsapp-automation").exists() {
+                        let config: serde_json::Value = std::fs::read_to_string(
+                            dir.join("whatsapp-automation.json"),
+                        )
+                        .ok()
+                        .and_then(|raw| serde_json::from_str(&raw).ok())
+                        .unwrap_or_else(|| serde_json::json!({}));
+                        let chat = config
+                            .get("chat")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("")
+                            .to_owned();
+                        let limit = config
+                            .get("limit")
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(5) as u32;
+                        let text = config
+                            .get("text")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("")
+                            .to_owned();
+                        let dry_run = config
+                            .get("dry_run")
+                            .and_then(|value| value.as_bool())
+                            .unwrap_or(true);
+
+                        let state = match handle.infinity_android().whatsapp_state() {
+                            Ok(state) => serde_json::to_value(state)
+                                .unwrap_or(serde_json::Value::Null),
+                            Err(error) => serde_json::json!({ "error": error.to_string() }),
+                        };
+                        let read = match handle.infinity_android().whatsapp_read(&chat, limit) {
+                            Ok(result) => serde_json::to_value(result)
+                                .unwrap_or(serde_json::Value::Null),
+                            Err(error) => serde_json::json!({ "error": error.to_string() }),
+                        };
+                        let send = match handle
+                            .infinity_android()
+                            .whatsapp_send(&chat, &text, dry_run)
+                        {
+                            Ok(result) => serde_json::to_value(result)
+                                .unwrap_or(serde_json::Value::Null),
+                            Err(error) => serde_json::json!({ "error": error.to_string() }),
+                        };
+
+                        let payload = serde_json::json!({
+                            "chat": chat,
+                            "dry_run": dry_run,
+                            "state": state,
+                            "read": read,
+                            "send": send,
+                        });
+                        let _ = std::fs::write(
+                            dir.join("whatsapp-automation.json.out"),
+                            serde_json::to_string_pretty(&payload).unwrap_or_default(),
+                        );
+                    }
                 });
             }
 

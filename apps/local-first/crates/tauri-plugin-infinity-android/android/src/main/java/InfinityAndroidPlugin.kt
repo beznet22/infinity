@@ -196,11 +196,20 @@ class InfinityAndroidPlugin(private val activity: Activity) : Plugin(activity) {
         val limit = (args.limit ?: 20).coerceIn(1, 100)
         activity.runOnUiThread {
             openWhatsApp { view ->
-                tapFirstChat(view, chat) {
-                    // The conversation panel renders after the row tap; retry
-                    // until messages exist instead of reading an empty pane.
-                    view.postDelayed({ readMessages(view, invoke, limit, 0) }, 2_500)
-                }
+                tapFirstChat(
+                    view,
+                    chat,
+                    onReady = {
+                        // The conversation panel renders after the row tap; retry
+                        // until messages exist instead of reading an empty pane.
+                        view.postDelayed({ readMessages(view, invoke, limit, 0) }, 2_500)
+                    },
+                    onMissing = {
+                        invoke.reject(
+                            "no conversation row: WhatsApp may not be linked on this device",
+                        )
+                    },
+                )
             }
         }
     }
@@ -211,13 +220,16 @@ class InfinityAndroidPlugin(private val activity: Activity) : Plugin(activity) {
         val args = invoke.parseArgs(SendArgs::class.java)
         val chat = args.chat?.trim().orEmpty()
         val text = args.text?.trim().orEmpty()
-        if (chat.isEmpty() || text.isEmpty()) {
-            invoke.reject("whatsappSend needs a chat name and text")
+        if (text.isEmpty() || (chat.isEmpty() && !args.dryRun)) {
+            invoke.reject("whatsappSend needs text, and a chat name unless it is a dry run")
             return
         }
         activity.runOnUiThread {
             openWhatsApp { view ->
-                tapFirstChat(view, chat) {
+                tapFirstChat(
+                    view,
+                    chat,
+                    onReady = {
                     view.postDelayed({
                         view.evaluateJavascript(COMPOSER_RECT_JS) { raw ->
                             val rect = readJson(raw)
@@ -230,12 +242,26 @@ class InfinityAndroidPlugin(private val activity: Activity) : Plugin(activity) {
                                 val type = TYPE_JS.replace("\$TEXT", JSONObject.quote(text))
                                 view.evaluateJavascript(type) { typedRaw ->
                                     val typed = readJson(typedRaw).optInt("chars", 0)
+                                    // Never send a partial message: the composer
+                                    // reported fewer characters than we typed.
+                                    if (typed < text.length - 1) {
+                                        invoke.resolve(
+                                            jsonObjectOf(
+                                                "sent" to false,
+                                                "drafted" to true,
+                                                "reason" to "typing incomplete",
+                                                "chars" to typed
+                                            )
+                                        )
+                                        return@evaluateJavascript
+                                    }
                                     if (args.dryRun) {
                                         invoke.resolve(
                                             jsonObjectOf(
                                                 "sent" to false,
                                                 "drafted" to true,
-                                                "chars" to typed
+                                                "chars" to typed,
+                                                "preview" to readJson(typedRaw).optString("preview")
                                             )
                                         )
                                         return@evaluateJavascript
@@ -271,7 +297,13 @@ class InfinityAndroidPlugin(private val activity: Activity) : Plugin(activity) {
                             }, 400)
                         }
                     }, 1_500)
-                }
+                    },
+                    onMissing = {
+                        invoke.reject(
+                            "no conversation row: WhatsApp may not be linked on this device",
+                        )
+                    },
+                )
             }
         }
     }
@@ -280,22 +312,34 @@ class InfinityAndroidPlugin(private val activity: Activity) : Plugin(activity) {
     private fun readMessages(view: WebView, invoke: Invoke, limit: Int, attempt: Int) {
         view.evaluateJavascript(READ_JS.replace("\$LIMIT", limit.toString())) { raw ->
             val parsed = readJson(raw)
-            if (parsed.optInt("count", 0) < 2 && attempt < 8) {
-                view.postDelayed({ readMessages(view, invoke, limit, attempt + 1) }, 700)
+            if (parsed.optInt("count", 0) < 2 && attempt < 16) {
+                view.postDelayed({ readMessages(view, invoke, limit, attempt + 1) }, 1_000)
                 return@evaluateJavascript
             }
             resolveJson(invoke, raw)
         }
     }
 
-    /** Searches (when a name is given) and taps the first conversation row. */
-    private fun tapFirstChat(view: WebView, chat: String, then: () -> Unit) {
+    /**
+     * Searches (when a name is given) and taps the first conversation row.
+     *
+     * Calls [onMissing] instead of doing nothing when there is no row: without
+     * that, an unlinked WhatsApp left every read/send invocation hanging forever.
+     */
+    private fun tapFirstChat(
+        view: WebView,
+        chat: String,
+        onReady: () -> Unit,
+        onMissing: () -> Unit,
+    ) {
         val tapRow = {
             view.evaluateJavascript(ROW_RECT_JS) { raw ->
                 val rect = readJson(raw)
                 if (rect.has("x")) {
                     tap(view, rect.optDouble("x").toFloat(), rect.optDouble("y").toFloat())
-                    view.postDelayed(then, 1_500)
+                    view.postDelayed(onReady, 1_500)
+                } else {
+                    onMissing()
                 }
             }
         }
@@ -706,16 +750,24 @@ class InfinityAndroidPlugin(private val activity: Activity) : Plugin(activity) {
         val TYPE_JS = """
             (function () {
               try {
-                document.execCommand('insertText', false, ${'$'}TEXT);
                 var box = document.querySelector('#main div[contenteditable="true"]');
-                return JSON.stringify({ chars: box ? (box.innerText || '').length : 0 });
+                if (!box) return JSON.stringify({ chars: 0, error: 'no composer' });
+                box.focus();
+                // Replace any existing draft instead of appending to it.
+                var range = document.createRange();
+                range.selectNodeContents(box);
+                var selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+                document.execCommand('insertText', false, ${'$'}TEXT);
+                var value = (box.innerText || '').replace(/\u200b/g, '');
+                return JSON.stringify({ chars: value.length, preview: value.slice(0, 40) });
               } catch (e) {
                 return JSON.stringify({ chars: 0, error: String(e) });
               }
             })()
         """.trimIndent()
 
-        /** Centre of the send button, once text is present. */
         val SEND_RECT_JS = """
             (function () {
               try {
