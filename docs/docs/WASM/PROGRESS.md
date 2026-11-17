@@ -208,3 +208,4 @@ and be called from JS.
 | 2026-11-17 | E1 | Android tool sandbox (wasmi, app-layer crate): no host imports, 1 MiB memory cap, 10M fuel. 4 host tests + device self-test: benign 42, WASI import denied, infinite loop fuelled out. |
 | 2026-11-17 | E2 | Browser tool sandbox: Worker per tool, only `env.memory` allowed (16-page max, host-supplied), 500 ms termination. Headless Chrome: 42 / WASI denied / spin terminated / unbounded-memory module refused. |
 | 2026-11-17 | F1 | Atomic fencing (conditional INSERT + trigger) proven under 40 concurrent stale writes: 0 accepted, 0 landed after the claim. Relay auth: 503 unconfigured / 401 wrong / 200 correct; CLI `--relay-token`. Namespacing and rate limits still pending. |
+| 2026-11-17 | G1 | Size budgets enforced: CI fails wasm above 4.3 MB raw / 1.1 MB gzip; `check-size.sh` fails the release APK above 33 MB (measured 31,784,275, up 4.28 MB after SQLite + wasmi). E2E matrix still pending. |

@@ -469,6 +469,13 @@ Asked explicitly; the honest state:
 - **Verified:** `no token → 401`, `wrong → 401`, `correct → 200 ["race","race2"]`; CLI push `→ 401` then `{"accepted":1}` with the token.
 - **Still missing before a public deployment:** per-user namespacing (one token protects the whole relay) and rate limits. Deploying is an external action and needs explicit approval.
 
+## D58 — Size budgets are enforced, not observed ✅
+- **WASM (CI):** `fork-ci.yml` fails the build above **4,300,000 bytes raw** or **1,100,000 bytes gzip**. Today's artifact is 3,920,352 raw / 1,029,467 gzip, so there is ~7% headroom; raising a budget needs a written reason in this file.
+- **APK (local script):** `android/scripts/check-size.sh` builds release and fails above **33,000,000 bytes**. Measured now: **31,784,275** (30.3 MB), up from 27,502,271 before SQLite + wasmi.
+- **Why local and not CI:** an APK build needs the full Tauri/NDK toolchain; the CI Android job only compiles the foundation crates. The script is the honest gate until a release job exists.
+- **What the increase buys:** bundled SQLite (durable log) and wasmi (tool isolation). Neither is removable without losing a property the plan requires.
+- **Still open:** the cross-platform E2E matrix (desktop → Android → browser with shared assertions) is not scripted yet.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

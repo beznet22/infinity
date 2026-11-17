@@ -92,3 +92,16 @@ jobs:
           size=$(stat -c%s crates/infinity-wasm/pkg/infinity_wasm_bg.wasm)
           echo "infinity_wasm_bg.wasm: $size bytes"
           echo "gzip: $(gzip -c crates/infinity-wasm/pkg/infinity_wasm_bg.wasm | wc -c) bytes"
+      - name: Enforce the size budget
+        run: |
+          # Fails the build when the browser bundle grows silently. Raise the
+          # budgets only with a written reason (docs/docs/WASM/decisions.md).
+          raw=$(stat -c%s crates/infinity-wasm/pkg/infinity_wasm_bg.wasm)
+          gzip=$(gzip -c crates/infinity-wasm/pkg/infinity_wasm_bg.wasm | wc -c)
+          raw_budget=4300000
+          gzip_budget=1100000
+          echo "raw $raw / $raw_budget bytes, gzip $gzip / $gzip_budget bytes"
+          if [ "$raw" -gt "$raw_budget" ] || [ "$gzip" -gt "$gzip_budget" ]; then
+            echo "::error::wasm size budget exceeded (D58)"
+            exit 1
+          fi
