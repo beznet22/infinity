@@ -23,6 +23,10 @@ members = [
     "crates/infinity-slack-bot",
     "crates/infinity-slack-dataflow",
 ]
+# Consumer archetypes are standalone projects, not workspace members (D16).
+# They carry their own `[workspace]` table; excluding them here keeps the
+# fork's workspace from trying to own them.
+exclude = ["apps/android-tauri"]
 resolver = "2"
 
 [workspace.package]

@@ -39,7 +39,7 @@ Instead of holding fragile open sockets for long-running tasks, RAP dispatches c
 
 ### 2.3 Dual-target compilation **[plan]** *(storage & TLS corrected)*
 The fork compiles the shared crates natively into Tauri's Android `.so` library and into a `wasm32-unknown-unknown` WebAssembly module (`infinity-wasm`). Two facts to design around, verified today:
-- **TLS:** the workspace HTTP client is `reqwest` with `default-tls` (`Cargo.toml:45`) — native-tls (OpenSSL on Linux). rustls currently enters only via `sqlx` (`tls-rustls-aws-lc-rs`, `Cargo.toml:59`). Android/WASM builds must switch `reqwest` to a rustls feature explicitly — that is a fork work item, not existing behavior.
+- **TLS:** the workspace HTTP client is `reqwest` 0.13, whose `default-tls` feature **is rustls** (`default-tls = ["rustls"]`, aws-lc-rs provider + `rustls-platform-verifier`) — there is **no OpenSSL** dependency. The Android implication is a C cross-toolchain for `aws-lc-sys` (NDK clang) plus `jni` for the platform certificate store, not a TLS switch *(corrected 2026-11-17; D11)*.
 - **Persistence:** there is **no SQLite in this codebase**. The daemon persists per-thread JSON files (`crates/infinity-daemon/src/memory_store.rs:3-16`); the Lambda runtime uses Aurora DSQL (Postgres wire protocol) + DynamoDB (`crates/infinity-agent-lambda/src/conversation_history.rs:16`, `state_store.rs:9`). SQLite appears only at the Cloudflare edge (Durable Objects / Agents SDK local SQL). Android/browser persistence will be new `ConversationStore`/`StateStore` implementations (`crates/infinity-agent-core/src/traits.rs:27, 223`).
 
 ### 2.4 Swappable local vs. cloud adapters **[today = trait seams] / [plan = full adapter set]**
@@ -74,7 +74,7 @@ Full-featured operation — **including long-running tasks — works with zero c
 
 | Capability | Android / Kotlin layer | Rust / Infinity bridge |
 |---|---|---|
-| Cloud LLMs | Standard `INTERNET` permission | Native `reqwest` client switched to **rustls** (work item, §2.3) for streaming APIs; providers ride the existing `infinity-provider-rig` (OpenAI/Anthropic/Gemini via rig-core) and `infinity-provider-bedrock` seams |
+| Cloud LLMs | Standard `INTERNET` permission | Native `reqwest` client — already rustls via `default-tls`, no OpenSSL; Android builds need the NDK C toolchain for `aws-lc-sys`. Providers ride the existing `infinity-provider-rig` (OpenAI/Anthropic/Gemini via rig-core) and `infinity-provider-bedrock` seams |
 | Notifications & Contacts | Android `NotificationListenerService` & `ContactsContract` | Tauri v2 Kotlin plugins (`app.tauri.plugin.Plugin` subclasses, `@Command` methods invoked from Rust via `run_mobile_plugin`); events pushed back through RAP `subscription_event` callbacks |
 | Files & App storage | Scoped Storage / MediaStore; Shizuku file bridge where privileged | `tokio::fs` inside the app sandbox; Kotlin plugin calls for shared external storage |
 | WhatsApp control | Embedded WebView with custom `WebViewClient` + JS injection | Rust tool sends DOM/action commands over Tauri IPC to the WebView and awaits scraped state or RAP callbacks *(untested design — highest-risk row, validate early)* |

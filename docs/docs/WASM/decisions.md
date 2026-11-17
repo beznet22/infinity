@@ -62,7 +62,8 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 
 ## D11 — TLS: state the real config; rustls is a planned switch ✅
 - **Evidence:** `reqwest` = `default-tls` (native-tls → OpenSSL on Linux) at `Cargo.toml:45`; rustls enters via `sqlx` `tls-rustls-aws-lc-rs` (`Cargo.toml:59`).
-- **Decision:** the rewrite states current reality and makes "move `reqwest` to a rustls feature for Android/WASM builds" an explicit plan item instead of asserting rustls as existing behavior (audit 3.2).
+- **Decision:** the rewrite stated the configuration as understood at audit time and listed a rustls switch as a possible work item (audit 3.2).
+- **Correction (2026-11-17, Phase 2 research):** the premise was wrong. reqwest **0.13** redefined `default-tls = ["rustls"]` (aws-lc-rs provider + `rustls-platform-verifier`), so the workspace is already rustls-only and there is **no OpenSSL**. The *original overview's* "rustls (no OpenSSL)" was accurate; audit rows 2.7/3.2 are corrected accordingly. The real Android work item is toolchain wiring — `aws-lc-sys` needs the NDK clang via `CC_<target>`/`AR_<target>`/linker env, and `rustls-platform-verifier` uses `jni`. **No TLS feature switch is planned.**
 
 ## D12 — WhatsApp / Android control rows: kept as labeled, unverified-by-nature plan ✅
 - **Rationale:** these describe *intended capabilities* of a not-yet-written app layer. They cannot be verified against this repo and some (WhatsApp automation) are inherently implementation-dependent.

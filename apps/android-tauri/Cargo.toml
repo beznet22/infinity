@@ -1,0 +1,31 @@
+[package]
+name = "infinity-hybrid-android"
+version = "0.1.0"
+description = "Consumer archetype: Infinity Hybrid on Android via Tauri v2."
+edition = "2021"
+publish = false
+
+# Consumer archetype (decision D16): this app is NOT a member of the fork's
+# workspace. It has its own workspace so it can be copied wholesale into a
+# consumer codebase; the root workspace excludes this directory.
+[workspace]
+
+[lib]
+name = "infinity_hybrid_android_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
+
+# Fork crates. `sandbox-core` keeps its default `native` feature: the Android
+# process executor lives there.
+infinity-host = { path = "../../crates/infinity-host" }
+infinity-agent-core = { path = "../../crates/infinity-agent-core" }
+rap-client = { path = "../../crates/rap-client" }
+sandbox-core = { path = "../../crates/sandbox-core" }

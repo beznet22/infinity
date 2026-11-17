@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Infinity Hybrid</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; padding: 1.5rem; line-height: 1.5; }
+      h1 { font-size: 1.1rem; margin: 0 0 1rem; }
+      button { font: inherit; padding: 0.6rem 1rem; border-radius: 0.5rem; }
+      pre { background: rgba(127, 127, 127, 0.15); padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>Infinity Hybrid — Android archetype</h1>
+    <p>Assembles the fork's <code>HostCtx</code> and runs a sandbox probe on device.</p>
+    <button id="probe">Run host health probe</button>
+    <pre id="out">idle</pre>
+    <script>
+      const out = document.getElementById('out');
+      document.getElementById('probe').addEventListener('click', async () => {
+        out.textContent = 'running…';
+        try {
+          const health = await window.__TAURI__.core.invoke('host_health');
+          out.textContent = JSON.stringify(health, null, 2);
+        } catch (error) {
+          out.textContent = `error: ${error}`;
+        }
+      });
+    </script>
+  </body>
+</html>

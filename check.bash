@@ -71,6 +71,18 @@ else
     echo '  (skipped: run `rustup target add wasm32-unknown-unknown`)'
 fi
 
+step "Android readiness (aarch64-linux-android)"
+# Same idea for Android: the foundation crates must compile for the NDK target.
+# Requires the rust target plus an NDK (NDK_HOME, or ANDROID_HOME/ndk/*); see
+# docs/docs/WASM/README.md → "Building for Android".
+if rustup target list --installed | grep -qx aarch64-linux-android \
+    && { [ -n "${NDK_HOME:-}" ] || [ -d "${ANDROID_HOME:-/nonexistent}/ndk" ]; }; then
+    bash scripts/check-android.bash || fail "Android readiness gate failed"
+    pass "Android readiness gate passed"
+else
+    echo '  (skipped: needs `rustup target add aarch64-linux-android` and an NDK)'
+fi
+
 step "Web UI e2e (Playwright)"
 # Requires npm (the bundled-web build script runs vite) and the Playwright
 # chromium build matching playwright-rs's bundled driver (1.60 → r1223):

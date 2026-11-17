@@ -101,6 +101,26 @@ impl Tool<M> for MyTool { /* ... */ }
 
 ---
 
+## Building for Android
+
+Verified in this environment (NDK 29, SDK build-tools 35–37, JDK 17):
+
+- Rust Android targets: `rustup target add aarch64-linux-android x86_64-linux-android` (plus `armv7-linux-androideabi`, `i686-linux-android` if needed).
+- `aws-lc-sys` (the rustls provider behind reqwest's `default-tls`) compiles C, so the NDK toolchain must be discoverable. Cargo cannot read dashed env names from a shell `export`, so pass them with `env`:
+
+```bash
+NDK=$ANDROID_HOME/ndk/<version>
+TC=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+PATH="$TC/bin:$PATH" env \
+  "CC_aarch64-linux-android=$TC/bin/aarch64-linux-android24-clang" \
+  "AR_aarch64-linux-android=$TC/bin/llvm-ar" \
+  "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TC/bin/aarch64-linux-android24-clang" \
+  cargo check --target aarch64-linux-android -p infinity-host
+```
+
+- The consumer archetype lives in `apps/android-tauri` (excluded from the workspace, D16). It needs the Tauri CLI via pnpm (`pnpm install`), then `pnpm tauri android init --ci` and `pnpm tauri android build --apk --target <abi> --ci`.
+- `frontendDist` in `tauri.conf.json` is resolved relative to the config file, and `bundle.targets` accepts `"all"` (not `["apk"]` — the APK comes from the `--apk` flag).
+
 ## Verifying a wasm build
 
 ```bash
