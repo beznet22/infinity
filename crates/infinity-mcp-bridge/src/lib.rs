@@ -842,4 +842,53 @@ mod tests {
             "unknown operation must not hit the server"
         );
     }
+
+    /// The Streamable HTTP transport must accept an SSE response and remember
+    /// the `mcp-session-id` the server hands out.
+    #[tokio::test]
+    async fn http_transport_parses_sse_responses_and_tracks_the_session_id() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener address");
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut request = [0u8; 4096];
+            let read = socket.read(&mut request).await.expect("read request");
+            assert!(read > 0, "client sent no request bytes");
+
+            let body =
+                "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nmcp-session-id: session-123\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body,
+            );
+            socket
+                .write_all(response.as_bytes())
+                .await
+                .expect("write response");
+        });
+
+        let mut transport = HttpMcpTransport {
+            url: format!("http://{addr}/mcp"),
+            headers: HashMap::new(),
+            session_id: None,
+            next_id: 0,
+            http: reqwest::Client::new(),
+        };
+
+        let result = transport
+            .request("tools/list", None)
+            .await
+            .expect("request over sse");
+        assert_eq!(result, serde_json::json!({"ok": true}));
+        assert_eq!(transport.session_id.as_deref(), Some("session-123"));
+
+        server.await.expect("server task");
+    }
 }

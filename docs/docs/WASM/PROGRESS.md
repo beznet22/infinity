@@ -3,7 +3,7 @@
 Living **status** tracker (the *spec* is [`implementation-plan.md`](./implementation-plan.md)).
 Legend: ✅ done · 🔶 in progress · ⬜ pending · 🚫 blocked.
 
-Docs: [`overview.md`](./overview.md) blueprint · [`audit.md`](./audit.md) claim-by-claim audit · [`decisions.md`](./decisions.md) D1–D17 recorded (D18–D20 planned in the implementation plan) · [`implementation-plan.md`](./implementation-plan.md) Phases 0–4 chunk spec · evidence note `.kimchi/docs/wasm-overview-external-verification.md`.
+Docs: [`overview.md`](./overview.md) blueprint · [`audit.md`](./audit.md) claim-by-claim audit · [`decisions.md`](./decisions.md) D1–D17 recorded (D18–D21 planned in the implementation plan) · [`implementation-plan.md`](./implementation-plan.md) Phases 0–4 chunk spec · evidence note `.kimchi/docs/wasm-overview-external-verification.md`.
 
 **Branch:** `feat/wasm-android-hybrid` in the git worktree `../infinity-hybrid` (overview §1). The root checkout stays on `main`.
 
@@ -36,12 +36,12 @@ Chunk IDs below are authoritative from `implementation-plan.md`. All work is ⬜
 | Phase | Chunks | Scope | Status |
 |---|---|---|---|
 | 0 | 0.1–0.8 | WASM readiness (W1–W10 + CI gate) | ✅ complete — 7/7 green |
-| 1 | 1.1–1.5 | Core adapter traits + `HostCtx` (D19) | ⬜ |
+| 1 | 1.1–1.5 | Core adapter traits + `HostCtx` (D20) | 🔶 1.1, 1.5 done; 1.2/1.3 deferred (D19); 1.4 pending |
 | 2 | 2.1–2.4 | Consumer archetype: Android Tauri app | ⬜ |
 | 3 | 3.1–3.4 | Browser runtime (`crates/infinity-wasm`) | ⬜ |
-| 4 | 4.1–4.3 | `infinity-remote-adapters` + worker archetype + optional relay (D20) | ⬜ |
+| 4 | 4.1–4.3 | `infinity-remote-adapters` + worker archetype + optional relay (D21) | ⬜ |
 
-Promoted decisions (recorded in the plan, echoed into `decisions.md` when each chunk starts): **D18 `SliceTimer`** (chunk 0.5) · **D19 `HostCtx`** (chunk 1.4) · **D20 optional edge relay** (chunk 4.3).
+Promoted decisions (recorded in the plan, echoed into `decisions.md` when each chunk starts): **D18 `SliceTimer`** (chunk 0.5) · **D20 `HostCtx`** (chunk 1.4) · **D21 optional edge relay** (chunk 4.3).
 
 ---
 
@@ -69,11 +69,11 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 
 | Chunk | Deliverable | Status |
 |---|---|---|
-| 1.1 | `SandboxExecutor` trait + native adapter | ⬜ |
-| 1.2 | `SliceRunner` trait; Lambda runtime refactored onto it (behavior-preserving) | ⬜ |
-| 1.3 | `AgentCoordinator` trait; daemon refactored onto it (behavior-preserving) | ⬜ |
-| 1.4 | `HostCtx` bundle (**D19**) + full mock-bundle test | ⬜ |
-| 1.5 | `McpTransport` HTTP/SSE impl (native) | ⬜ |
+| 1.1 | `SandboxExecutor` trait + `ProcessSandboxExecutor` + tests | ✅ |
+| 1.2 | `SliceRunner` trait — **deferred to Phase 3/4 (D19)** | ⏭ |
+| 1.3 | `AgentCoordinator` trait — **deferred to Phase 3/4 (D19)** | ⏭ |
+| 1.4 | `HostCtx` bundle (**D20**) + full mock-bundle test | ⬜ |
+| 1.5 | MCP HTTP/SSE — already implemented upstream; added an SSE test | ✅ |
 
 ---
 
@@ -105,7 +105,7 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 |---|---|---|
 | 4.1 | `crates/infinity-remote-adapters` (DO slice runner, SQLite stores, DO alarms, Sandbox SDK, MCP relay) | ⬜ |
 | 4.2 | Worker archetype (`apps/cloudflare-worker`, consumer-side) | ⬜ |
-| 4.3 | Optional browser relay (**D20**) + self-hosted-daemon alternative documented | ⬜ |
+| 4.3 | Optional browser relay (**D21**) + self-hosted-daemon alternative documented | ⬜ |
 
 ---
 
@@ -145,3 +145,6 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | 2026-11-17 | docs | Added `docs/docs/WASM/README.md` — consumer guide covering the `default-features = false` requirement and its failure modes, RNG features, the target-dependent `Send` bounds, and the runtime-only wasm limits. |
 | 2026-11-17 | 0.7 | `infinity-mcp-bridge` gained the same default-on `native` feature (stdio transport, `tokio/process` + `tokio/io-util`), cfg-gated `McpTransport` and `McpTransportFactory`, and `tokio::task::spawn_local` for tool-result delivery in the browser. `JsonRpcRequest` + the `Serialize` import are native-only (clippy caught both). Gate reached **7 green / 0 expected-red**. Verified: native workspace green, mcp-bridge tests pass, clippy clean with and without default features. |
 | 2026-11-17 | 0.8 | Phase 0 exit verified: wasm gate 7/7 green (empty expected-red set), native `cargo check --workspace --all-targets` green, 141 tests passing across the touched crates (`rap-protocol`, `rap-client`, `infinity-agent-core` 108, `sandbox-core` 31, `infinity-mcp-bridge`), `cargo fmt --check` clean, clippy clean with and without default features. |
+| 2026-11-17 | 1.1 | `sandbox-core` gained `executor`: portable `SandboxExecutor` (cfg-gated `Send`), `ExecRequest`/`ExecOutput`, and native `ProcessSandboxExecutor` with path confinement. 3 tests, including object-safety through `Box<dyn SandboxExecutor>`. |
+| 2026-11-17 | 1.5 | No implementation work needed — `HttpMcpTransport` already does Streamable HTTP + SSE. Added a test with a fake loopback server covering SSE parsing and `mcp-session-id` capture. |
+| 2026-11-17 | 1.2/1.3 | **Deferred to Phase 3/4** (D19): the flows already exist as `AgentSystem::step` / `SessionManager`; extracting traits now would guess the shape and refactor untestable AWS/daemon code. |

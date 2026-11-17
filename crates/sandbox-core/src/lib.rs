@@ -1,5 +1,7 @@
 pub mod callback;
 pub mod error;
+/// Sandbox command/file execution, portable across targets.
+pub mod executor;
 /// Git process plumbing (native only, see the `native` feature).
 #[cfg(feature = "native")]
 pub mod git;

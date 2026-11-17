@@ -113,8 +113,17 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Original plan:** chunk 0.5 would promote the Lambda timer abstraction (`WakeupScheduler`/`SleepTool`, `infinity-agent-lambda/src/tools/sleep.rs:46-115`) into a core `SliceTimer` trait with tokio / wasmtimer / DO-alarm impls.
 - **Discrepancy found (2026-11-17, chunk 0.5 research):** `tokio::time` **compiles** for `wasm32-unknown-unknown` and only panics when used at runtime (tokio #7510); `std::fs` likewise compiles and errors at runtime; `event_processor.rs:5065`'s `tokio::time::Instant` is inside `#[cfg(test)]`; `system/local/` has no process/net/thread usage and compiles. None of them blocked the wasm build — the only compile blockers were the `Send` bounds.
 - **Decision (user, 2026-11-17):** chunk 0.5 is scoped to **compile-green only** (the `Tool` cfg-gating). `SliceTimer`, the `std::fs` config-path work and optional `system/local` gating move to **Phase 3**, where the browser runtime actually needs a wake mechanism.
-- **Numbering stays reserved:** D19 = `HostCtx` (chunk 1.4), D20 = optional edge relay (chunk 4.x).
+- **Numbering stays reserved:** D20 = `HostCtx` (chunk 1.4), D21 = optional edge relay (chunk 4.x).
 - **Risk if forgotten:** `TokioSleepTool` / `TokioSleepUntilTool` / `SleepUntilEventOrInputTool` would panic if invoked in a browser — tracked as W5 in `PROGRESS.md` §3 and in the revisit triggers below.
+
+## D19 — Phase 1 scope: additive-only; coordinator/runner extraction deferred ✅
+- **Finding (research, 2026-11-17):** three of the five planned Phase 1 chunks did not match reality.
+  1. **Chunk 1.5 is already implemented upstream** — `HttpMcpTransport` sends `accept: application/json, text/event-stream`, tracks `mcp-session-id` and parses `data:` frames. The chunk became "add tests for that path".
+  2. **`SliceRunner` would wrap `AgentSystem::step`**, which already exists (`builder.rs:453`); the Lambda crate that would be refactored has **0 tests** and cannot be exercised locally without AWS.
+  3. **`AgentCoordinator` would wrap a 1,918-LOC `SessionManager`** that is `Rc`/`!Send` and `LocalSet`-bound (14 tests), while Phase 3 (SharedWorker) and Phase 4 (Durable Objects) each need a *different* shape.
+- **Decision (user):** Phase 1 is **trimmed** — 1.1 `SandboxExecutor` (additive, portable), 1.4 `HostCtx` **without** the deferred `SliceTimer`/`CallbackIngest` slots, and 1.5 as tests only. The `SliceRunner` / `AgentCoordinator` extractions move to Phase 3/4, where a second implementation forces the correct abstraction and the code is testable.
+- **Rejected:** all five chunks as written (unverifiable AWS refactor, abstraction guessed from one implementation); only 1.1 (leaves no assembly point for Phases 2–3).
+- **Consequence:** overview §4 still lists the four adapter roles, but only `SandboxExecutor` and `McpTransport` are realised in Phase 1; `SliceRunner` / `AgentCoordinator` remain planned names until Phase 3/4.
 
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.

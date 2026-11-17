@@ -12,8 +12,8 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 
 **Decisions promoted by this plan** (from overview §10; recorded here now, echoed into `decisions.md` when each chunk starts — numbering follows the order the work begins):
 - **D18 — `SliceTimer` trait promotion** (§10.2 idea; starts in chunk 0.5): generalize `WakeupScheduler`/`SleepTool` (`crates/infinity-agent-lambda/src/tools/sleep.rs:46-115`) into a core timer capability with tokio / wasmtimer / DO-alarm impls.
-- **D19 — `HostCtx` capability bundle** (§10.2 idea; starts in chunk 1.4): one assembly point where a host provides `HttpClient`, `ToolsetCache`, stores, `SliceTimer`, config source, sandbox executor, MCP transport factory, `CallbackIngest`.
-- **D20 — Optional edge relay** (§10.1 idea; starts in chunk 4.3): browser callback relay on DO hibernation WS; the non-cloud alternative is the user's own `infinity-daemon` (D17).
+- **D20 — `HostCtx` capability bundle** (§10.2 idea; starts in chunk 1.4): one assembly point where a host provides `HttpClient`, `ToolsetCache`, stores, `SliceTimer`, config source, sandbox executor, MCP transport factory, `CallbackIngest`.
+- **D21 — Optional edge relay** (§10.1 idea; starts in chunk 4.3): browser callback relay on DO hibernation WS; the non-cloud alternative is the user's own `infinity-daemon` (D17).
 
 **Deferred beyond Phase 4** (backlog, not forgotten): cross-host session migration (§10.4), full capability-permission matrix (§10.3 — Phase 3 ships minimal fetch-allowlist enforcement only), offline-first `DeferQueue` outbox (§10.1 third row).
 
@@ -40,7 +40,7 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 
 ### 0.3 `rap-client` — gate `net` + callback server; define the ingestion seam (W1, W3)
 - **Files:** `crates/rap-client/Cargo.toml`, `src/callback_server.rs` (gated), new ingestion seam.
-- **Work (as implemented):** tokio `net` + `hyper`/`hyper-util`/`http-body-util` moved into `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`; `callback_server` module `#[cfg]`-gated. The `CallbackIngest` seam is **deferred to chunk 1.4**, where `HostCtx` actually consumes it — introducing it here without a consumer would add an unused public abstraction. Ingestion impls: (a) local loopback server (native, exists), (b) in-page delivery (chunk 3.3), (c) relay push (D20).
+- **Work (as implemented):** tokio `net` + `hyper`/`hyper-util`/`http-body-util` moved into `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`; `callback_server` module `#[cfg]`-gated. The `CallbackIngest` seam is **deferred to chunk 1.4**, where `HostCtx` actually consumes it — introducing it here without a consumer would add an unused public abstraction. Ingestion impls: (a) local loopback server (native, exists), (b) in-page delivery (chunk 3.3), (c) relay push (D21).
 - **Accept:** crate green on wasm; native callback behavior unchanged (host tests).
 
 ### 0.4 `infinity-protocol` — config-path injection (W9) *(reclassified: correctness, not a compile blocker)*
@@ -83,26 +83,41 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 
 ## Chunk 1 — Phase 1: Core Adapter Traits
 
-**Goal.** Define the fork's four adapter roles as real traits (D4) plus the `HostCtx` assembly point (D19), so Phases 2–4 implement rather than invent.
+**Goal (trimmed, D19).** Realise the adapter roles that are *additive* now — `SandboxExecutor` (1.1) and the `HostCtx` assembly point (1.4, without the deferred timer/ingest slots) — and lock in the existing MCP HTTP behaviour with tests (1.5). The `SliceRunner` (1.2) and `AgentCoordinator` (1.3) extractions are deferred to Phase 3/4, where a second implementation (SharedWorker, Durable Objects) defines the correct shape and the code is testable.
 
-### 1.1 `SandboxExecutor` (`sandbox-core`)
+### 1.1 `SandboxExecutor` (`sandbox-core`) *(implemented)*
+
+- **Implemented:** `sandbox_core::executor` — a portable `SandboxExecutor` trait (cfg-gated `Send + Sync` on native, `?Send` on wasm), `ExecRequest` / `ExecOutput` value types, and `ProcessSandboxExecutor` (native) which spawns processes and confines file paths to its root (rejects absolute paths and `..`). Tests: builder round-trip, a mock executor exercised through `Box<dyn SandboxExecutor>` (object safety), and a real `echo`/file round-trip against a temp dir.
+
 - Trait over "run shell/code, read/write virtual FS", grounded on `ModeProvider`/`SandboxBackend`/`MetadataStore` (`sandbox.rs:57,155`, `metadata.rs:10`); async, `?Send`-compatible for wasm consumers.
 - Impl now: thin adapter over existing local/remote routing (native). wasmsh impl → 3.2; Sandbox SDK impl → 4.1.
 - **Accept:** trait + native adapter + mock tests.
 
-### 1.2 `SliceRunner` (`infinity-agent-core`)
+### 1.2 `SliceRunner` (`infinity-agent-core`) — **deferred to Phase 3/4 (D19)**
+
+*Plan said:* extract the "wake → bounded slice → hibernate" flow into a trait and refactor the Lambda runtime onto it.
+*Why deferred:* the flow already exists as `AgentSystem::step` (`builder.rs:453`), and the Lambda crate has no tests and cannot run locally without AWS.
+
 - "Wake on event → run bounded slice → hibernate", extracted from the step-mode flow (`builder.rs:399-424`) and the Lambda per-invocation pattern (`infinity-agent-lambda/src/main.rs`, `bin/rap-receiver.rs`). Lambda refactored onto it, behavior-preserving.
 - **Accept:** trait defined; Lambda refactored; all Lambda tests green.
 
-### 1.3 `AgentCoordinator` (`infinity-agent-core`)
+### 1.3 `AgentCoordinator` (`infinity-agent-core`) — **deferred to Phase 3/4 (D19)**
+
+*Plan said:* extract thread registry/routing/persistence into a trait and refactor the daemon onto it.
+*Why deferred:* the daemon's `SessionManager` is 1,918 LOC, `Rc`/`!Send` and `LocalSet`-bound; the browser and edge coordinators will need different shapes, so the trait should be derived from those implementations.
+
 - "Thread registry, routing, persistence", grounded on `infinity-daemon/src/session/mod.rs:11-17` + `PersistentConversationStore`/`PersistentStateStore`. Daemon refactored onto it, behavior-preserving. SharedWorker (3.3) and DO (4.1) become future impls.
 - **Accept:** trait defined; daemon refactored; daemon tests green.
 
-### 1.4 `HostCtx` capability bundle (**D19**)
+### 1.4 `HostCtx` capability bundle (**D20**)
 - One struct/trait assembled by the host: `HttpClient`, `ToolsetCache`, `ConversationStore`+`StateStore`, `SliceTimer`, `ThreadConfigSource`, `SandboxExecutor`, MCP transport factory, `CallbackIngest`. Generic where the pieces are already injected (`system/config.rs:38-40` pattern).
 - **Accept:** compiles on host + wasm32; daemon/lambda assemble it natively; a full mock bundle unit test exists.
 
-### 1.5 `McpTransport` HTTP/SSE impl (native, `infinity-mcp-bridge`)
+### 1.5 `McpTransport` HTTP/SSE impl (native, `infinity-mcp-bridge`) *(already implemented upstream — tests added)*
+
+*Finding:* `HttpMcpTransport` already implements Streamable HTTP with SSE (`accept: application/json, text/event-stream`, `mcp-session-id` tracking, `data:` frame parsing).
+*Added:* a test with a fake loopback server asserting the SSE body is parsed and the session id is captured. **Not covered yet:** reconnect/resumption (`Last-Event-ID`) and multi-event streams — noted for Phase 3.
+
 - Streamable-HTTP/SSE transport behind a feature; `request(method, params)` contract unchanged; stdio path untouched.
 - **Accept:** integration test against a stub MCP HTTP server.
 - **Phase 1 exit criteria:** traits compile on host + wasm32; daemon/lambda behavior-preserving (full suite green); PROGRESS updated.
@@ -158,7 +173,7 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 
 ## Chunk 4 — Phase 4: Consumer Archetype — Cloudflare Worker + Optional Relay
 
-**Goal.** The optional accelerator (D17): edge slices for heavy/very-long work, plus the optional browser relay (D20). Consumer-side per D16, built on `crates/infinity-remote-adapters`.
+**Goal.** The optional accelerator (D17): edge slices for heavy/very-long work, plus the optional browser relay (D21). Consumer-side per D16, built on `crates/infinity-remote-adapters`.
 
 ### 4.1 `crates/infinity-remote-adapters` (fork crate)
 - Edge `SliceRunner` on Durable Objects + Agents SDK (SQLite-backed stores as the DSQL/Dynamo analog; DO alarms as the edge `SliceTimer` impl, D18); RAP callback router with the hibernation WebSocket API; `SandboxExecutor` edge impl over Sandbox SDK/Containers; MCP relay via `MCPClientManager`.
@@ -168,7 +183,7 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 - Wrangler config, DO classes/migrations (`new_sqlite_classes`), routes; consumes 4.1; integration tests: deploy to preview, run a slice, assert callback delivery.
 - **Accept:** `wrangler deploy` succeeds; an offloaded slice runs in a container and returns results.
 
-### 4.3 Optional browser callback relay (**D20**)
+### 4.3 Optional browser callback relay (**D21**)
 - Relay exposes the RAP callback URL for browser threads; pushes `tool_result`/`subscription_event` via hibernation WS (or Web Push when absent). Browser side plugs into the 3.3 ingestion seam; the self-hosted `infinity-daemon` is the documented non-cloud alternative.
 - **Accept:** browser thread receives an async tool result via relay; docs state the non-cloud alternative.
 - **Phase 4 exit criteria:** deployable worker archetype; browser↔edge offload round-trip demonstrated; **cloud-optional regression check** — with the worker undeployed, all Phase 0–3 flows still work.
