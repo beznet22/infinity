@@ -355,6 +355,15 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Verified on device — refusal:** planting a foreign claim (`owner: laptop`, expiry +1 h) in the app's log made the next run return `{"reply":"","lease":"denied","notes":["another device holds this session"]}`. The model was **not** called, which is the actual guarantee.
 - **Known gap:** the probe uses the 60 s default TTL and a 45 s turn deadline, so it cannot expire mid-turn. Longer turns must call `guard.renew()` on their own heartbeat; that heartbeat is the remaining work before the lease is safe for arbitrarily long turns.
 
+## D44 — Two physical devices enforce the lease through the relay ✅
+- **What changed:** the Android chat probe now **pulls before judging** and **pushes the claim immediately** (and the release afterwards), instead of deciding from its own log alone. A `hold_lease` config flag keeps the claim for two-device testing.
+- **Verified across two devices** (phone `SM-G781U` + tablet `SM-T875`, both on the LAN, relay = local `wrangler dev` with local D1):
+  - phone A: `{"reply":"infinity-on-android-llm","lease":"held"}`, and the relay logged `POST /v1/sync/push`;
+  - tablet B, launched seconds later: pulled A's claim and returned `{"reply":"","lease":"denied","notes":["another device holds this session"]}` — **no model call**.
+- **Why this mattered:** the single-device refusal in D43 could not distinguish "lease works" from "local log says so". With the claim travelling through the relay, the guarantee is now the one that counts: one user, two devices, one writer.
+- **Operational note:** the default TTL is 60 s, so the test had to re-claim on A and start B within a minute. That is exactly the gap the foreground-service heartbeat closes next.
+- **Cleanup:** the tablet's test configs and the planted session log were removed; the relay was stopped (test-only, never deployed this time).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

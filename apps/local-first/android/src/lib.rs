@@ -156,10 +156,18 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
     let device = read_sync_device(dir);
     let session = infinity_sync::SessionId::new("android-chat");
     let lease_store = infinity_sync::FileEventStore::new(dir.join("sync"));
+    let relay = read_sync_relay(dir);
+
+    // Pull first: the claim must be judged against what other devices already
+    // wrote, not just against this device's local log.
+    if let Some(relay) = &relay {
+        pull_session(&lease_store, &dir.join("sync"), relay, &device, &session).await?;
+    }
+
     let guard = infinity_sync::LeaseGuard::acquire(
         &lease_store,
         session.clone(),
-        device,
+        device.clone(),
         infinity_sync::DEFAULT_TTL_MS,
     )
     .await
@@ -235,10 +243,30 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
         }
     }
 
+    // Publish the claim immediately, so a second device that starts now is
+    // refused rather than racing us.
+    if let Some(relay) = &relay {
+        push_session(&lease_store, relay, &session).await?;
+    }
+
+    if read_hold_lease(dir) {
+        // Two-device test: stay the holder instead of releasing.
+        return Ok(ChatOutcome {
+            model: config.model,
+            reply,
+            notes,
+            timed_out,
+            lease: "held".to_owned(),
+        });
+    }
+
     guard
         .release(&lease_store)
         .await
         .map_err(|error| format!("lease release: {error}"))?;
+    if let Some(relay) = &relay {
+        push_session(&lease_store, relay, &session).await?;
+    }
 
     Ok(ChatOutcome {
         model: config.model,
@@ -247,6 +275,82 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
         timed_out,
         lease: "released".to_owned(),
     })
+}
+
+fn read_sync_config(dir: &std::path::Path) -> Option<serde_json::Value> {
+    let raw = std::fs::read_to_string(dir.join("sync-config.json")).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn read_sync_relay(dir: &std::path::Path) -> Option<String> {
+    read_sync_config(dir)?.get("relay_url")?.as_str().map(str::to_owned)
+}
+
+fn read_hold_lease(dir: &std::path::Path) -> bool {
+    read_sync_config(dir)
+        .and_then(|config| config.get("hold_lease").and_then(|value| value.as_bool()))
+        .unwrap_or(false)
+}
+
+/// Pull the session's events into the local log and advance the cursor.
+async fn pull_session(
+    store: &infinity_sync::FileEventStore,
+    root: &std::path::Path,
+    relay: &str,
+    device: &infinity_sync::DeviceId,
+    session: &infinity_sync::SessionId,
+) -> Result<(), String> {
+    use infinity_sync::{CursorStore, EventStore};
+
+    let transport = infinity_sync::http::HttpTransport::with_client(
+        portable_http_client()?,
+        relay.to_owned(),
+    );
+    let cursors = CursorStore::new(root, device);
+    let after = cursors
+        .load()
+        .await
+        .map_err(|error| error.to_string())?
+        .get(session.as_str())
+        .copied()
+        .unwrap_or(0);
+
+    let stored = transport
+        .pull(session, after)
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut highest = after;
+    for item in &stored {
+        store.append(&item.event).await.map_err(|error| error.to_string())?;
+        highest = highest.max(item.position);
+    }
+    cursors
+        .set(session, highest)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// Push everything this device knows for the session (the relay dedupes).
+async fn push_session(
+    store: &infinity_sync::FileEventStore,
+    relay: &str,
+    session: &infinity_sync::SessionId,
+) -> Result<(), String> {
+    use infinity_sync::EventStore;
+
+    let transport = infinity_sync::http::HttpTransport::with_client(
+        portable_http_client()?,
+        relay.to_owned(),
+    );
+    let events = store
+        .events_since(session, 0)
+        .await
+        .map_err(|error| error.to_string())?;
+    transport
+        .push(&events)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 /// Device id from `sync-config.json`, or a stable default.
