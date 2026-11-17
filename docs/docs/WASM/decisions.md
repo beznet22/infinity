@@ -454,6 +454,13 @@ Asked explicitly; the honest state:
 - **Cost:** wasmi is embedded only on Android (the browser engine is the sandbox there, D29). The APK-size delta was not isolated this run; it belongs in the Step 7 budget.
 - **Limit:** this is the executor, not the tool registry. Tools are not yet loaded dynamically or shipped as separate modules; the probe proves the isolation boundary that such a registry will use.
 
+## D56 — The browser sandbox is a Worker with one permitted import ✅
+- **Rules:** one Worker per tool; the only import allowed is `env.memory`, supplied by the host with `maximum: 16` pages (1 MiB). A module that declares its own memory is refused, because the host could not then bound it. Anything else (WASI, JS glue) is denied by name before instantiation.
+- **Time:** the host terminates the Worker after 500 ms. JavaScript has no fuel metering, so termination is the coarse equivalent; it is honest about what it is.
+- **Verified in headless Chrome (CDP, real time):** `echo42 → 42`, `wasi_write → denied: wasi_snapshot_preview1.fd_write`, `spin → timeout: terminated after 500ms`, `no_memory → denied: the tool must import env.memory so the host can bound it`.
+- **Why not wasmi:** the browser engine is already a Wasm runtime (D29). Embedding a second interpreter would add weight without adding isolation that the Worker boundary does not already provide.
+- **Limit:** this is an executor, not a registry; tools are fetched by URL in the harness, and the app does not call it yet. Persistence and wake are separate steps (#121).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

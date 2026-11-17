@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>running</title>
+<pre id="report">running…</pre>
+<script type="module">
+  import { runTool } from "./sandbox.js";
+
+  const names = ["echo42", "wasi_write", "spin", "no_memory"];
+  const report = {};
+  for (const name of names) {
+    const response = await fetch(`./tools/${name}.wasm`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    report[name] = await runTool(bytes, 500);
+  }
+  document.getElementById("report").textContent = JSON.stringify(report, null, 2);
+  document.title = "done";
+</script>
