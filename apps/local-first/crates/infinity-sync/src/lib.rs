@@ -25,7 +25,8 @@ mod types;
 pub mod http;
 
 pub use lease::{
-    DEFAULT_TTL_MS, LeaseAction, LeasePayload, LeaseState, current_lease, lease_event, may_write,
+    DEFAULT_TTL_MS, LeaseAction, LeaseGuard, LeasePayload, LeaseState, current_lease, lease_event,
+    may_write,
 };
 pub use snapshot::{SnapshotPayload, replay, snapshot_event};
 pub use store::{CursorStore, EventStore, FileEventStore};

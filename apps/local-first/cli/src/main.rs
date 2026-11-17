@@ -14,8 +14,8 @@ use std::path::PathBuf;
 
 use infinity_sync::http::HttpTransport;
 use infinity_sync::{
-    CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, SessionId,
-    SyncEvent, current_lease, lease_event, now_ms, replay, snapshot_event,
+    CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, LeaseGuard,
+    SessionId, SyncEvent, current_lease, lease_event, now_ms, replay, snapshot_event,
 };
 
 struct Args {
@@ -169,6 +169,44 @@ async fn main() -> Result<(), String> {
             println!(
                 "{}",
                 serde_json::json!({ "session": session.as_str(), "seq": seq, "holder": holder })
+            );
+        }
+        "guard" => {
+            // Acquire-or-refuse, exactly what a host does before starting a turn.
+            let session = args.session.clone().ok_or("guard needs --session")?;
+            let ttl = args.ttl_ms.unwrap_or(infinity_sync::DEFAULT_TTL_MS);
+            let acquired = LeaseGuard::acquire(&store, session.clone(), args.device.clone(), ttl)
+                .await
+                .map_err(|e| e.to_string())?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            let holder = current_lease(&events, now_ms()).map(|lease| lease.owner.to_string());
+            println!(
+                "{}",
+                serde_json::json!({
+                    "acquired": acquired.is_some(),
+                    "device": args.device.as_str(),
+                    "holder": holder,
+                })
+            );
+        }
+        "unguard" => {
+            let session = args.session.clone().ok_or("unguard needs --session")?;
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let event = lease_event(
+                session.clone(),
+                args.device.clone(),
+                seq,
+                LeaseAction::Release,
+                args.ttl_ms.unwrap_or(infinity_sync::DEFAULT_TTL_MS),
+                now_ms(),
+            );
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            println!(
+                "{}",
+                serde_json::json!({ "session": session.as_str(), "released": true })
             );
         }
         "snapshot" => {

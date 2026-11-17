@@ -341,6 +341,14 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
   - `#[allow]` that the workspace lint requires to be `#[expect(reason = ...)]`.
 - **Consequence:** "green" now means the same thing locally and in CI, and a regression in either target fails a real job rather than a hand-run command.
 
+## D42 — The lease is enforceable through one guard object ✅
+- **API:** `LeaseGuard::acquire(store, session, device, ttl)` returns `Ok(None)` when another device holds the session — the "do not start a turn" signal — or a guard that can `renew()` on the turn's heartbeat and `release()` when done.
+- **Why a guard rather than a check:** it pairs the check with the claim, so there is no window where two devices both pass `may_write` and both start. Release is explicit: dropping the guard cannot release, because releasing is an event and needs an await.
+- **Tested (3 new tests, 15 total):** one-device-at-a-time (second acquire refused), release hands over, an expired lease does not block, and renewal keeps the hold while still refusing the other device.
+- **Demonstrated through the CLI:**
+  `laptop guard` → `{"acquired":true,"holder":"laptop"}`; `phone guard` → `{"acquired":false,"holder":"laptop"}`; `laptop unguard` → released; `phone guard` → `{"acquired":true,"holder":"phone"}`.
+- **Remaining:** hosts must actually call it around a turn. The Android chat probe is the natural first consumer (it owns both an event store and a turn); until that wiring lands the guarantee is available but unused.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

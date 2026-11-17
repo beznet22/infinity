@@ -169,3 +169,155 @@ mod tests {
         assert_eq!(current_lease(&[broken], 0), None);
     }
 }
+
+/// A held lease, for use around one turn.
+///
+/// Hosts acquire before starting a turn (`None` means another device owns the
+/// session, so start nothing), renew while a long turn is in flight, and release
+/// when finished. Dropping the guard does **not** release: release is an event,
+/// and events need an await.
+pub struct LeaseGuard {
+    session: SessionId,
+    device: DeviceId,
+    ttl_ms: u64,
+}
+
+impl LeaseGuard {
+    /// Claim the session for `device`, or report that someone else holds it.
+    pub async fn acquire<S: crate::EventStore>(
+        store: &S,
+        session: SessionId,
+        device: DeviceId,
+        ttl_ms: u64,
+    ) -> Result<Option<Self>, crate::SyncError> {
+        let now = crate::now_ms();
+        let events = store.events_since(&session, 0).await?;
+        if !may_write(&events, &device, now) {
+            return Ok(None);
+        }
+
+        let seq = store.last_seq(&session).await? + 1;
+        let event = lease_event(
+            session.clone(),
+            device.clone(),
+            seq,
+            LeaseAction::Claim,
+            ttl_ms,
+            now,
+        );
+        store.append(&event).await?;
+        Ok(Some(Self {
+            session,
+            device,
+            ttl_ms,
+        }))
+    }
+
+    pub fn device(&self) -> &DeviceId {
+        &self.device
+    }
+
+    /// Extend the lease from the turn's own heartbeat.
+    pub async fn renew<S: crate::EventStore>(&self, store: &S) -> Result<(), crate::SyncError> {
+        let seq = store.last_seq(&self.session).await? + 1;
+        let event = lease_event(
+            self.session.clone(),
+            self.device.clone(),
+            seq,
+            LeaseAction::Renew,
+            self.ttl_ms,
+            crate::now_ms(),
+        );
+        store.append(&event).await
+    }
+
+    /// Give the session back so another device can take it immediately.
+    pub async fn release<S: crate::EventStore>(self, store: &S) -> Result<(), crate::SyncError> {
+        let seq = store.last_seq(&self.session).await? + 1;
+        let event = lease_event(
+            self.session.clone(),
+            self.device.clone(),
+            seq,
+            LeaseAction::Release,
+            self.ttl_ms,
+            crate::now_ms(),
+        );
+        store.append(&event).await
+    }
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+    use crate::{EventStore, FileEventStore};
+
+    fn session() -> SessionId {
+        SessionId::new("guard")
+    }
+
+    #[tokio::test]
+    async fn only_one_device_holds_the_session() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = FileEventStore::new(dir.path());
+        let laptop = DeviceId::new("laptop");
+        let phone = DeviceId::new("phone");
+
+        let guard = LeaseGuard::acquire(&store, session(), laptop.clone(), 60_000)
+            .await
+            .expect("acquire")
+            .expect("free session");
+        assert_eq!(guard.device(), &laptop);
+
+        let denied = LeaseGuard::acquire(&store, session(), phone.clone(), 60_000)
+            .await
+            .expect("acquire");
+        assert!(denied.is_none(), "the second device must not start a turn");
+
+        guard.release(&store).await.expect("release");
+        let phone_guard = LeaseGuard::acquire(&store, session(), phone, 60_000)
+            .await
+            .expect("acquire");
+        assert!(phone_guard.is_some());
+    }
+
+    #[tokio::test]
+    async fn an_expired_lease_can_be_taken() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = FileEventStore::new(dir.path());
+
+        let _guard = LeaseGuard::acquire(&store, session(), DeviceId::new("laptop"), 0)
+            .await
+            .expect("acquire")
+            .expect("free session");
+
+        let taken = LeaseGuard::acquire(&store, session(), DeviceId::new("phone"), 60_000)
+            .await
+            .expect("acquire");
+        assert!(taken.is_some(), "an expired lease must not block a turn");
+    }
+
+    #[tokio::test]
+    async fn renewal_extends_the_hold() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = FileEventStore::new(dir.path());
+        let laptop = DeviceId::new("laptop");
+        let phone = DeviceId::new("phone");
+
+        let guard = LeaseGuard::acquire(&store, session(), laptop.clone(), 1_000)
+            .await
+            .expect("acquire")
+            .expect("free session");
+        guard.renew(&store).await.expect("renew");
+
+        let events = store.events_since(&session(), 0).await.expect("events");
+        assert_eq!(
+            current_lease(&events, crate::now_ms()).map(|lease| lease.owner),
+            Some(laptop)
+        );
+
+        let denied = LeaseGuard::acquire(&store, session(), phone, 1_000)
+            .await
+            .expect("acquire");
+        assert!(denied.is_none());
+    }
+}
