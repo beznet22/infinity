@@ -6,6 +6,7 @@ A **consumer-side** reference app (not a workspace member — see decision D16).
 
 - `infinity-host`'s `HostCtx` is assembled from real implementations: in-memory stores, `SimpleHttpClient` (reqwest → rustls), `InMemoryToolsetCache`, `ProcessSandboxExecutor`.
 - `sandbox-core`'s `ProcessSandboxExecutor` spawns a real process inside the Android app (`sh -c echo …`).
+- One real model turn through `infinity-provider-rig` + `infinity-agent-core` on-device, over HTTPS, with the API key supplied at runtime.
 - Tauri v2 mobile wiring: `#[tauri::mobile_entry_point]`, `staticlib`/`cdylib` crate types, `generate_context!`.
 
 The app also runs the probe once at startup and writes the result to its data dir, so a device run can be verified without touching the UI:
@@ -26,6 +27,46 @@ On a real device (Android 13, arm64-v8a), installed and launched headlessly:
 The device run also caught a real bug: `ProcessSandboxExecutor` spawned with a
 cwd that did not exist yet (`ENOENT`). The executor now creates its root (and an
 explicit `cwd`) before spawning, with a regression test.
+
+A model turn, with `chat-config.json` pushed at runtime (`{base_url, api_key,
+model, prompt}`) and the reply written to `chat.json`:
+
+```json
+{ "model": "gemma-4-31b", "reply": "infinity-on-android-llm",
+  "notes": [], "timed_out": false }
+```
+
+```bash
+adb shell run-as run.hydro.infinityhybrid cat chat.json
+```
+
+## Android TLS: `rustls-platform-verifier`
+
+`reqwest` 0.13's `rustls` feature (enabled by `rig-core`'s `reqwest-rustls`) always
+routes certificate verification through `rustls-platform-verifier`. Its Android
+backend calls into the JVM and needs two things this archetype does not ship:
+`init_with_env`/`init_with_runtime` invoked with a JNI `Env` and the Android
+`Context`, and the Kotlin `CertificateVerifier` AAR added to the Gradle build.
+
+Without them the handshake **stalls** — no error, no log line, and no timeout of
+its own; the runtime keeps retrying, so a chat probe looks like a hang. Reports:
+[reqwest#2966](https://github.com/seanmonstar/reqwest/issues/2966),
+[tauri#13267](https://github.com/tauri-apps/tauri/issues/13267).
+
+The archetype sidesteps the JNI bridge: `portable_http_client()` builds a
+`rustls::ClientConfig` from Mozilla roots compiled into the binary (`webpki-roots`),
+hands it to reqwest with `use_preconfigured_tls`, and injects that client into rig
+with `.http_client(...)`.
+
+- **Pro:** pure Rust; no AAR step in a regenerated `gen/android` project; identical
+  behaviour on desktop, Android and browsers (where no OS trust store exists).
+- **Con:** the platform store is ignored, so user-installed and corporate CAs do
+  not apply. Apps that need those must ship the AAR and call
+  `rustls_platform_verifier::android::init_with_env()` before the first request.
+
+`CompletionsClient<H>`'s `H` cannot be inferred through `.http_client()`, because
+that method replaces the type parameter — pin it:
+`CompletionsClient::<reqwest::Client>::builder()`.
 
 ## Headless debugging (no clicking)
 

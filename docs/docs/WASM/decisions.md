@@ -133,6 +133,14 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Shape:** a generic bundle `HostCtx<C, S, H, T, E>` with accessors, `with_mcp_transport` and `into_parts`; MCP is `Option<McpTransportFactory>` because not every host exposes MCP servers. It deliberately **excludes** `ThreadConfigSource` — that trait is generic over the system's `M`/`H` and holds `Rc<dyn Tool<M>>`, so it is per-system, not per-host — and the deferred `SliceTimer` / `CallbackIngest` slots (D18).
 - **Verified:** 2 tests (capability access, optional MCP + `into_parts`), compiles for `wasm32-unknown-unknown` with `--no-default-features`, clippy clean.
 
+## D21 — Android TLS verifies against embedded Mozilla roots ✅
+- **Question:** how should HTTPS work in the Android archetype, given `reqwest` 0.13's `rustls` feature (pulled in by `rig-core`'s `reqwest-rustls`) always uses `rustls-platform-verifier`?
+- **Finding (measured on device):** without that crate's Android initialization the handshake **stalls** — no error, no log line, no `AgentEvent::Info`. Two probes timed out at 60 s with `reply: ""` and `notes: []` while the same key/model answered `HTTP 200` from the host in 2 s. The crate needs `init_with_env`/`init_with_runtime` (JNI `Env` + Android `Context`) **and** a Kotlin AAR in the Gradle build; upstream confirms both requirements ([reqwest#2966](https://github.com/seanmonstar/reqwest/issues/2966), [tauri#13267](https://github.com/tauri-apps/tauri/issues/13267)).
+- **Decision:** build a `rustls::ClientConfig` from `webpki-roots` compiled into the binary, hand it to `reqwest` via `use_preconfigured_tls`, and inject the client into rig with `.http_client(...)`.
+- **Rejected:** (a) shipping the AAR + `init_with_env` — the AAR lives in `gen/android`, which is regenerated and git-ignored, so every consumer would have to redo it; (b) `targetSdkVersion 28` to dodge the verifier — not viable for a current app; (c) plain HTTP — unacceptable for a real key.
+- **Consequence:** the platform trust store is bypassed, so user-installed and corporate CAs do not apply. This is the same posture as the browser target, where no OS store exists either. Apps that need private CAs must ship the AAR and initialize the verifier before the first request — recorded in `apps/android-tauri/README.md`.
+- **Verified:** `chat.json` → `{"model":"gemma-4-31b","reply":"infinity-on-android-llm","notes":[],"timed_out":false}`, ~10 s, and `cargo check --target aarch64-linux-android` clean.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

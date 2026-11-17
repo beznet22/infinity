@@ -27,5 +27,18 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 # process executor lives there.
 infinity-host = { path = "../../crates/infinity-host" }
 infinity-agent-core = { path = "../../crates/infinity-agent-core" }
+infinity-provider-protocol = { path = "../../crates/infinity-provider-protocol" }
+infinity-provider-rig = { path = "../../crates/infinity-provider-rig" }
 rap-client = { path = "../../crates/rap-client" }
 sandbox-core = { path = "../../crates/sandbox-core" }
+# OpenAI-compatible HTTP backend for the on-device conversation probe (Kimchi,
+# OpenRouter, …). Providers are not feature-gated in rig-core; only the HTTP
+# stack is.
+rig-core = { version = "0.31", default-features = false, features = ["reqwest-rustls"] }
+# reqwest's `rustls` feature hard-depends on `rustls-platform-verifier`, whose
+# Android backend stalls without JNI initialization and a Gradle-packaged Kotlin
+# AAR. The TLS config is built from compiled-in Mozilla roots instead (see
+# `portable_http_client`), so verification stays pure Rust on every platform.
+reqwest = { version = "0.13", default-features = false }
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
+webpki-roots = "1"
