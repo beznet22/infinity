@@ -165,12 +165,22 @@ struct HttpMcpTransport {
 
 impl HttpMcpTransport {
     async fn new(url: String, headers: HashMap<String, String>) -> Result<Self, BoxError> {
+        Self::with_client(url, headers, reqwest::Client::new()).await
+    }
+
+    /// Build with a caller-supplied client (see `SimpleHttpClient::with_client`
+    /// for why Android must pass its own TLS stack).
+    async fn with_client(
+        url: String,
+        headers: HashMap<String, String>,
+        http: reqwest::Client,
+    ) -> Result<Self, BoxError> {
         let mut transport = Self {
             url,
             headers,
             session_id: None,
             next_id: 0,
-            http: reqwest::Client::new(),
+            http,
         };
         initialize(&mut transport).await?;
         transport.notify_initialized().await?;
@@ -332,15 +342,29 @@ impl McpClient {
         url: impl Into<String>,
         headers: HashMap<String, String>,
     ) -> Self {
+        Self::http_with_client(name, url, headers, reqwest::Client::new())
+    }
+
+    /// Lazy Streamable HTTP MCP client using a caller-supplied reqwest client,
+    /// so the host controls TLS, timeouts and proxies for MCP too.
+    pub fn http_with_client(
+        name: impl Into<String>,
+        url: impl Into<String>,
+        headers: HashMap<String, String>,
+        client: reqwest::Client,
+    ) -> Self {
         let url = url.into();
         Self::new(
             name,
             Arc::new(move || {
                 let url = url.clone();
                 let headers = headers.clone();
+                let client = client.clone();
                 Box::pin(async move {
-                    Ok(Box::new(HttpMcpTransport::new(url, headers).await?)
-                        as Box<dyn McpTransport>)
+                    Ok(
+                        Box::new(HttpMcpTransport::with_client(url, headers, client).await?)
+                            as Box<dyn McpTransport>,
+                    )
                 })
             }),
         )

@@ -294,6 +294,18 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **`infinity-wasm` is 3.9 MB raw / 1.03 MB gzip**, of which reqwest added +326 KB / +137 KB; Rhai and chrono-tz remain the largest removable contributors (D35).
 - **Build script:** `scripts/build-apk.sh [target] [debug|release]`; Tauri treats release as the default, so only `--debug` is a flag.
 
+## D37 — Browser turn works with a real provider; retries must use the platform timer ✅
+- **A1 root cause (measured):** the `time not implemented on this platform` panic came from `event_processor`'s **retry path**, not from the request itself. A provider error (429) reached `tokio::time::sleep`, which calls `Instant::now()` and aborts the page. Fixed by routing every retry wait through a cfg-gated `retry_delay`: `tokio::time` natively, `wasmtimer` on `wasm32` (agent-core now depends on wasmtimer for the web target only).
+- **A2 was a cascade:** with the time panic fixed, the js-sys `RefCell already borrowed` panic did not recur on the success path. No separate fix was needed; treat it as fallout from the aborted poll.
+- **A3 verified, with a real model:** the fork's `run_openai_compatible_turn` produced `{"ok": true, "mode": "provider", "reply": "infinity-browser-openrouter-ok"}` in headless Chrome.
+- **CORS reality on this machine:**
+  - OpenRouter: browser-callable, but the account has **no credits** (€402 on paid models) and the free model rate-limits (429).
+  - Kimchi: **not** browser-callable (`TypeError: Failed to fetch`) — no CORS headers.
+  - Cloudflare fronting Kimchi rejects Python's default user agent with **error 1010**; a custom UA is required.
+  - Therefore a relay is mandatory for non-CORS providers. Verified today with `apps/local-first/browser/dev-cors-proxy.py`, a local stand-in that injects the key server-side (so it never reaches the page) and adds CORS headers.
+- **B1 landed:** `SimpleHttpClient::with_client`, `HttpMcpTransport::with_client`, `McpClient::http_with_client`, and the Android host now assembles its RAP client with the portable TLS client instead of `new()`. This closes the D21/D34 class of "transport built its own client".
+- **Measured bundle at this revision:** wasm 3,920,352 B raw / 1,029,467 B gzip + 31,828 B JS.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

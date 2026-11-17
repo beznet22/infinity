@@ -40,6 +40,10 @@ uuid = { workspace = true, features = ["v4", "js"] }
 # feature); the matching `--cfg getrandom_backend="wasm_js"` rustflag lives
 # in `/.cargo/config.toml`.
 getrandom = { version = "0.3", features = ["wasm_js"] }
+# `tokio::time` compiles for wasm32-unknown-unknown but panics on first use:
+# a browser has no tokio timer driver, and completion retries must not take
+# the page down (D18/D36).
+wasmtimer = "0.4"
 
 [dev-dependencies]
 insta = { version = "1", features = ["json", "redactions"] }

@@ -81,6 +81,16 @@ impl SimpleHttpClient {
         }
     }
 
+    /// Build around an existing reqwest client.
+    ///
+    /// Hosts must use this when the platform needs a specific TLS stack: on
+    /// Android, reqwest's default `rustls-platform-verifier` backend stalls the
+    /// handshake unless it was initialized (D21/D34), so the app passes its
+    /// portable client instead.
+    pub fn with_client(client: reqwest::Client) -> Self {
+        Self { client }
+    }
+
     /// Shared POST body for the two target-specific [`HttpClient`] impls.
     async fn post_request(&self, url: &str, body: &str) -> Result<u16, SimpleHttpError> {
         let resp = self

@@ -1321,6 +1321,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2779,6 +2789,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "wasmtimer",
 ]
 
 [[package]]
@@ -3015,26 +3026,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "infinity-sync"
-version = "0.2.0"
-dependencies = [
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "infinity-wasm"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
+ "console_error_panic_hook",
+ "futures-util",
  "infinity-agent-core",
  "infinity-host",
+ "infinity-provider-protocol",
  "rap-client",
+ "reqwest",
+ "serde_json",
  "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasmtimer",
 ]
 
@@ -6345,7 +6351,6 @@ checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
- "serde_core",
  "wasm-bindgen",
 ]
 

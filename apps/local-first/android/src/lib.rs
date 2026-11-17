@@ -34,15 +34,17 @@ type AndroidHost = HostCtx<
 /// in durable implementations (the daemon crate's `PersistentConversationStore`
 /// and `PersistentStateStore`, pointed at the app's data directory) without
 /// touching the rest of the wiring.
-fn build_host() -> AndroidHost {
+fn build_host() -> Result<AndroidHost, String> {
     let sandbox_root = std::env::temp_dir().join("infinity-hybrid-sandbox");
-    HostCtx::new(
+    Ok(HostCtx::new(
         InMemoryConversationStore::new(),
         InMemoryStateStore::new(),
-        SimpleHttpClient::new(),
+        // Not `SimpleHttpClient::new()`: reqwest's default TLS stack stalls on
+        // Android (D21/D34), so the host owns the client.
+        SimpleHttpClient::with_client(portable_http_client()?),
         InMemoryToolsetCache::new(),
         ProcessSandboxExecutor::new(sandbox_root),
-    )
+    ))
 }
 
 /// Result of the on-device health probe.
@@ -64,7 +66,7 @@ pub struct HostHealth {
 /// Android: the host bundle is assembled, and the sandbox executor spawns a
 /// real process inside the app.
 async fn probe() -> Result<HostHealth, String> {
-    let host = build_host();
+    let host = build_host()?;
     let output = host
         .sandbox()
         .run(ExecRequest::new(["sh", "-c", "echo infinity-on-android"]))
