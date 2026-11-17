@@ -201,6 +201,44 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Consequence:** the browser store will be a `SqliteConversationStore`/`SqliteStateStore` behind the existing traits, not an IndexedDB one. The D27 `?Send` blocker applies to either engine: it is about JS handles and the core's `Send`-bound futures, not about storage choice.
 - **Rejected:** IndexedDB as the target engine (cheap, but the app would outgrow it); SQLite on the main thread or in a shared worker (API does not exist there); Asyncify builds (roughly double the wasm for no need here).
 
+## D29 — No Wasm interpreter in the browser; the browser *is* the runtime ✅
+- **Question:** does the browser bundle need `wasmi` for the sandbox, as Android does?
+- **No.** A browser already hosts WebAssembly. A tool module is instantiated with the platform `WebAssembly` API and isolated by the runtime: separate linear memory, only the imports we pass (no `fetch`, no DOM, no filesystem), and a dedicated Worker so a runaway module is killed with `terminate()` instead of freezing the tab.
+- **What the browser engine does not give us:** fuel metering and determinism (NaN canonicalization, threads). The policy is therefore a wall-clock timeout + memory cap, not instruction counting.
+- **Consequence:** the +1.16 MB figure measured for `wasmi` on `aarch64` belongs to **Android only** (D23), not to the browser bundle. `wasmi` is still the smallest *memory-safe* option there, but only if tools ship independently of the app.
+- **Android ladder (measured or reasoned):** compile tools into the app (0 KB) → native binary from `nativeLibraryDir` (fragile, per ABI) → `wasmi` (+1.16 MB, Rust, fuel metering) → `wasm3`/WAMR MicroRuntime (smaller, C, thinner maintenance). The last is rejected for untrusted bytecode unless APK size becomes a hard constraint.
+
+## D30 — Browser storage engine: `wa-sqlite` sync build ✅ (extends D28)
+- **Measured (this repo, 2026-11-17):**
+
+| Package | wasm raw | wasm gzip | JS |
+|---|---|---|---|
+| `@sqlite.org/sqlite-wasm` 3.54.1 | 879 KB | 398 KB | 641 KB |
+| **`wa-sqlite` 1.0.0 (sync)** | **546 KB** | **267 KB** | ~42 KB glue |
+| `wa-sqlite` 1.0.0 (Asyncify) | 1.1 MB | — | — |
+
+- **Decision:** use `wa-sqlite`'s **sync** build in a dedicated worker. The Asyncify build only buys access from contexts without sync access handles (main thread/service worker) at roughly double the wasm and a slower instrumented path; we do not need that.
+- **VFS choice:** transparency (file export) matters only if the database file is the unit of replication. With an event log (D31) it is not, so the fast `AccessHandlePoolVFS` is acceptable **only with a single-writer guarantee** across tabs; otherwise use `OPFSCoopSyncVFS`/`OPFSWriteAheadVFS`, which allow multiple connections.
+- **JSPI** (async suspension without Asyncify) is Chromium-only today; noted as the future replacement, not a baseline.
+
+## D31 — Sync model: append-only event log, not a CRDT ✅
+- **Context (user):** an agentic **local-first** app syncing across the user's own devices and sessions — explicitly **not** collaboration.
+- **Decision:** sessions are single-writer. Replication is an immutable **event log** per session plus a **per-device cursor**, with a **session lease** so two devices never run the same session at once (the second forks or waits).
+- **Why not Yjs:** CRDTs solve concurrent edits of shared state. Here the needs are durability, resume and dedupe; an ordered log gives all three, stays queryable, and ports to D1 unchanged. Yjs remains an option for a future *document* surface, scoped to that surface.
+- **Dedupe/idempotency:** writer-assigned UUIDv7 `event_id`; the relay ignores a repeated `(session_id, event_id)`, so retries are free.
+- **Compaction:** a `Snapshot` event carries full state; a new device replays from the latest snapshot instead of the whole history.
+- **Stores:** `FileEventStore` (JSONL per session) for desktop/CLI and Android; SQLite in the browser. Both satisfy the same contract; the file store's tests pin the semantics (ordered reads, idempotent append, per-device cursors).
+
+## D32 — Relay on D1; no Durable Objects unless server-push is needed ✅
+- **D1 is SQLite**, so local schema and migrations are shared (`sessions`, `events`, `sync_state`), which is the main reason SQLite won over IndexedDB.
+- **Single-user topology has no fan-out, presence or broadcast**, so a plain Worker endpoint suffices: `INSERT ... ON CONFLICT DO NOTHING` on push, `SELECT ... WHERE seq > ?` on pull. Durable Objects are earned only by server-initiated notifications or per-document real-time coordination.
+- **Write-rate caution:** one row per keystroke is the wrong shape for D1; batch/coalesce events client-side or move hot paths to a DO.
+- **Privacy:** event payloads may be encrypted client-side so D1 stores ciphertext; the sync protocol is unchanged.
+
+## D33 — `crates/infinity-sync` placement and scope ✅
+- New fork crate holding the wire types, the `EventStore` contract, the file store and per-device cursors.
+- **Native-only for now:** a browser store is blocked by D27 (`?Send` propagation), not by storage choice. The crate deliberately excludes HTTP so the transport stays a separate seam (dev relay now, Worker later).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
