@@ -6,8 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::{SessionId, StoredEvent, SyncEvent};
 use crate::SyncError;
+use crate::types::{SessionId, StoredEvent, SyncEvent};
 
 /// What the relay accepted for a push.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -31,7 +31,7 @@ impl HttpTransport {
             .build()
             .map_err(SyncError::Transport)?;
         Ok(Self {
-            base_url: base_url.into().trim_end_matches('/').to_string(),
+            base_url: base_url.into().trim_end_matches('/').to_owned(),
             client,
         })
     }
@@ -44,7 +44,7 @@ impl HttpTransport {
     /// from compiled-in roots instead.
     pub fn with_client(client: reqwest::Client, base_url: impl Into<String>) -> Self {
         Self {
-            base_url: base_url.into().trim_end_matches('/').to_string(),
+            base_url: base_url.into().trim_end_matches('/').to_owned(),
             client,
         }
     }
@@ -82,7 +82,10 @@ impl HttpTransport {
         let response = self
             .client
             .get(format!("{}/v1/sync/pull", self.base_url))
-            .query(&[("session", session.as_str()), ("after", &after_position.to_string())])
+            .query(&[
+                ("session", session.as_str()),
+                ("after", &after_position.to_string()),
+            ])
             .send()
             .await
             .map_err(SyncError::Transport)?;

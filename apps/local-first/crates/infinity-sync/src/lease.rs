@@ -73,7 +73,10 @@ pub fn lease_event(
 /// The current holder as of `now_ms`, derived from the log alone.
 pub fn current_lease(events: &[SyncEvent], now_ms: u64) -> Option<LeaseState> {
     let mut state: Option<LeaseState> = None;
-    for event in events.iter().filter(|event| event.kind == EventKind::LeaseClaim) {
+    for event in events
+        .iter()
+        .filter(|event| event.kind == EventKind::LeaseClaim)
+    {
         let Ok(payload) = serde_json::from_value::<LeasePayload>(event.payload.clone()) else {
             continue;
         };

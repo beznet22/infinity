@@ -17,7 +17,10 @@ use crate::types::{SessionId, SyncEvent};
 /// `async fn` in a public trait cannot express an auto-trait bound, which is
 /// deliberate here: the browser backend will have to return `!Send` futures
 /// (D27), so pinning `Send` now would block it.
-#[allow(async_fn_in_trait, reason = "Send would block the browser backend (D27)")]
+#[expect(
+    async_fn_in_trait,
+    reason = "Send would block the browser backend (D27)"
+)]
 pub trait EventStore {
     /// Appends an event. Re-appending the same `event_id` is a no-op, which is
     /// what makes a retried push safe.
@@ -69,7 +72,7 @@ impl FileEventStore {
             .filter(|line| !line.trim().is_empty())
             .map(|line| {
                 serde_json::from_str::<SyncEvent>(line).map_err(|error| SyncError::Corrupt {
-                    line: line.to_string(),
+                    line: line.to_owned(),
                     error,
                 })
             })
@@ -183,7 +186,7 @@ impl CursorStore {
 
     pub async fn set(&self, session: &SessionId, position: i64) -> Result<(), SyncError> {
         let mut cursors = self.load().await?;
-        cursors.insert(session.as_str().to_string(), position);
+        cursors.insert(session.as_str().to_owned(), position);
         if let Some(parent) = self.path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
@@ -220,10 +223,22 @@ mod tests {
             store.append(&event("s", seq)).await.expect("append");
         }
 
-        assert_eq!(store.last_seq(&SessionId::new("s")).await.unwrap(), 3);
-        let all = store.events_since(&SessionId::new("s"), 0).await.unwrap();
+        assert_eq!(
+            store
+                .last_seq(&SessionId::new("s"))
+                .await
+                .expect("test fixture"),
+            3
+        );
+        let all = store
+            .events_since(&SessionId::new("s"), 0)
+            .await
+            .expect("test fixture");
         assert_eq!(all.len(), 3);
-        let tail = store.events_since(&SessionId::new("s"), 2).await.unwrap();
+        let tail = store
+            .events_since(&SessionId::new("s"), 2)
+            .await
+            .expect("test fixture");
         assert_eq!(tail.len(), 1);
         assert_eq!(tail[0].seq, 3);
     }
@@ -242,7 +257,7 @@ mod tests {
             store
                 .events_since(&SessionId::new("s"), 0)
                 .await
-                .unwrap()
+                .expect("test fixture")
                 .len(),
             1
         );
@@ -252,15 +267,18 @@ mod tests {
     async fn lists_sessions_and_tracks_cursors_per_device() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = FileEventStore::new(dir.path());
-        store.append(&event("a", 1)).await.unwrap();
-        store.append(&event("b", 1)).await.unwrap();
+        store.append(&event("a", 1)).await.expect("test fixture");
+        store.append(&event("b", 1)).await.expect("test fixture");
 
-        let sessions = store.sessions().await.unwrap();
+        let sessions = store.sessions().await.expect("test fixture");
         assert_eq!(sessions.len(), 2);
 
         let cursors = CursorStore::new(dir.path(), &DeviceId::new("laptop"));
-        cursors.set(&SessionId::new("a"), 1).await.unwrap();
-        let loaded = cursors.load().await.unwrap();
+        cursors
+            .set(&SessionId::new("a"), 1)
+            .await
+            .expect("test fixture");
+        let loaded = cursors.load().await.expect("test fixture");
         assert_eq!(loaded.get("a"), Some(&1));
     }
 }

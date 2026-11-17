@@ -330,6 +330,17 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Demonstrated through the CLI** (`local-sync`): `write` → `lease` (`holder: laptop`) → `snapshot` (`covered: 2`) → `write` → `replay` (`has_snapshot: true, tail: 1`).
 - **Not yet enforced:** the lease is advisory in the sync layer. Wiring `may_write` into turn start (and renewing it during a long turn) is the remaining step; until then two devices *can* both run a session.
 
+## D41 — The gates are enforceable: optional tooling no longer blocks, CI covers the fork ✅
+- **`check.bash` was all-or-nothing:** a missing `jj` (or `bwrap`/`sandbox-exec`) aborted the entire run, so none of the fork's own gates could be exercised on a clean machine. It now treats them as optional, says so, and excludes `sandbox-local`'s tests when they are absent. Everything else runs.
+- **Verified:** `./check.bash` exits **0** — formatting, clippy (`-D warnings`), compile, tests, doctests, the wasm gate (9 crates) and the Android gate (8 crates, NDK detected) all pass; Playwright e2e and `cargo-about` are skipped with instructions.
+- **New `.github/workflows/fork-ci.yml`** (fork-specific, leaves upstream `ci.yml` alone): wasm gate, Android gate with `setup-ndk` r27, archetype tests plus the Worker's `tsc --noEmit`, and a `wasm-pack` build that prints raw+gzip size.
+- **Clippy findings fixed on the way** (they had never been seen because the run aborted before lint):
+  - dead `HttpMcpTransport::new` after the client-injection refactor;
+  - a compile-time-constant assertion in `infinity-wasm`'s test;
+  - `to_string()` on `&str` (several) and `unwrap()` in tests in the archetype;
+  - `#[allow]` that the workspace lint requires to be `#[expect(reason = ...)]`.
+- **Consequence:** "green" now means the same thing locally and in CI, and a regression in either target fails a real job rather than a hand-run command.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

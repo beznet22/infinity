@@ -14,8 +14,8 @@ use std::path::PathBuf;
 
 use infinity_sync::http::HttpTransport;
 use infinity_sync::{
-    current_lease, lease_event, now_ms, replay, snapshot_event, CursorStore, DeviceId, EventKind,
-    EventStore, FileEventStore, LeaseAction, SessionId, SyncEvent,
+    CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, SessionId,
+    SyncEvent, current_lease, lease_event, now_ms, replay, snapshot_event,
 };
 
 struct Args {
@@ -42,8 +42,7 @@ fn parse() -> Result<Args, String> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         let mut take = |name: &str| -> Result<String, String> {
-            args.next()
-                .ok_or_else(|| format!("{name} needs a value"))
+            args.next().ok_or_else(|| format!("{name} needs a value"))
         };
         match arg.as_str() {
             "--root" => root = Some(PathBuf::from(take("--root")?)),
@@ -55,11 +54,11 @@ fn parse() -> Result<Args, String> {
                 ttl_ms = Some(
                     take("--ttl")?
                         .parse()
-                        .map_err(|_| "--ttl must be milliseconds".to_string())?,
+                        .map_err(|_| "--ttl must be milliseconds".to_owned())?,
                 )
             }
             "--state" => state = Some(take("--state")?),
-            other if command.is_none() => command = Some(other.to_string()),
+            other if command.is_none() => command = Some(other.to_owned()),
             other => return Err(format!("unexpected argument {other}")),
         }
     }
@@ -89,11 +88,7 @@ async fn main() -> Result<(), String> {
         "write" => {
             let session = args.session.clone().ok_or("write needs --session")?;
             let text = args.text.clone().ok_or("write needs --text")?;
-            let seq = store
-                .last_seq(&session)
-                .await
-                .map_err(|e| e.to_string())?
-                + 1;
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
             let event = SyncEvent::new(
                 session.clone(),
                 args.device.clone(),
@@ -112,7 +107,10 @@ async fn main() -> Result<(), String> {
             let mut pushed = 0usize;
             let sessions = store.sessions().await.map_err(|e| e.to_string())?;
             for session in sessions {
-                let events = store.events_since(&session, 0).await.map_err(|e| e.to_string())?;
+                let events = store
+                    .events_since(&session, 0)
+                    .await
+                    .map_err(|e| e.to_string())?;
                 let ack = transport.push(&events).await.map_err(|e| e.to_string())?;
                 pushed += ack.accepted;
             }
@@ -130,7 +128,10 @@ async fn main() -> Result<(), String> {
                 .copied()
                 .unwrap_or(0);
 
-            let stored = transport.pull(&session, after).await.map_err(|e| e.to_string())?;
+            let stored = transport
+                .pull(&session, after)
+                .await
+                .map_err(|e| e.to_string())?;
             let mut highest = after;
             for item in &stored {
                 store.append(&item.event).await.map_err(|e| e.to_string())?;
@@ -160,7 +161,10 @@ async fn main() -> Result<(), String> {
                 now_ms(),
             );
             store.append(&event).await.map_err(|e| e.to_string())?;
-            let events = store.events_since(&session, 0).await.map_err(|e| e.to_string())?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
             let holder = current_lease(&events, now_ms()).map(|lease| lease.owner.to_string());
             println!(
                 "{}",
@@ -170,7 +174,9 @@ async fn main() -> Result<(), String> {
         "snapshot" => {
             let session = args.session.clone().ok_or("snapshot needs --session")?;
             let state: serde_json::Value = serde_json::from_str(
-                args.state.as_deref().ok_or("snapshot needs --state (JSON)")?,
+                args.state
+                    .as_deref()
+                    .ok_or("snapshot needs --state (JSON)")?,
             )
             .map_err(|error| format!("--state must be JSON: {error}"))?;
             let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
@@ -188,7 +194,10 @@ async fn main() -> Result<(), String> {
         }
         "replay" => {
             let session = args.session.clone().ok_or("replay needs --session")?;
-            let events = store.events_since(&session, 0).await.map_err(|e| e.to_string())?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
             let (state, tail) = replay(&events);
             println!(
                 "{}",

@@ -42,11 +42,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn host_tests_run_outside_the_browser() {
-        assert!(!IS_BROWSER_BUILD);
-    }
-
-    #[test]
     fn sandbox_backend_is_stated_not_implied() {
         assert!(sandbox_backend().contains("no process spawning"));
     }

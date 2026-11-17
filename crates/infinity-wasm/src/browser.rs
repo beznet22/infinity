@@ -9,12 +9,12 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use crate::state_store::IndexedDbStateStore;
 use crate::conversation_store::IndexedDbConversationStore;
+use crate::state_store::IndexedDbStateStore;
+use async_trait::async_trait;
 use infinity_agent_core::message::InfinityMessage;
-use infinity_agent_core::traits::{ConversationStore, StateStore};
 use infinity_agent_core::system::{AgentEvent, AgentSystemBuilder, StaticModel};
+use infinity_agent_core::traits::{ConversationStore, StateStore};
 use infinity_provider_protocol::{
     AssistantContent, CompletionError, CompletionRequest, ErrorClass, FinalResponse, Message,
     ModelEntry, ModelProvider, ModelStream, StreamChunk, UserContent,
@@ -124,9 +124,8 @@ impl ModelProvider for OpenAiCompatibleProvider {
                 Message::User { content } => {
                     messages.push(json!({ "role": "user", "content": render_user(content) }))
                 }
-                Message::Assistant { content } => messages.push(
-                    json!({ "role": "assistant", "content": render_assistant(content) }),
-                ),
+                Message::Assistant { content } => messages
+                    .push(json!({ "role": "assistant", "content": render_assistant(content) })),
             }
         }
 
@@ -210,8 +209,7 @@ async fn run_turn(
     let conversation_store = IndexedDbConversationStore::open()
         .await
         .map_err(|error| format!("conversation store: {error}"))?;
-    let system =
-        AgentSystemBuilder::new_local(conversation_store, state_store, model).start();
+    let system = AgentSystemBuilder::new_local(conversation_store, state_store, model).start();
 
     let mut thread = system.thread_builder().launch().await;
     thread

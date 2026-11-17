@@ -1,0 +1,94 @@
+name: Fork CI (wasm, Android, archetype)
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wasm:
+    name: WASM readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Gate the foundation crates for wasm32
+        run: bash scripts/check-wasm.bash
+
+  android:
+    name: Android readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27
+      - name: Gate the foundation crates for the NDK target
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: bash scripts/check-android.bash
+
+  archetype:
+    name: Local-first archetype
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/local-first
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/local-first
+      - name: Tests (sync, leases, snapshots)
+        run: cargo test --workspace
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/local-first/worker/pnpm-lock.yaml
+      - name: Typecheck the sync Worker
+        working-directory: apps/local-first/worker
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec tsc --noEmit
+
+  wasm-package:
+    name: infinity-wasm build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Build the browser package
+        working-directory: crates/infinity-wasm
+        run: wasm-pack build --target web --release
+      - name: Report size
+        run: |
+          size=$(stat -c%s crates/infinity-wasm/pkg/infinity_wasm_bg.wasm)
+          echo "infinity_wasm_bg.wasm: $size bytes"
+          echo "gzip: $(gzip -c crates/infinity-wasm/pkg/infinity_wasm_bg.wasm | wc -c) bytes"

@@ -68,7 +68,10 @@ struct ThreadRecord {
 enum Op {
     EnsureRoot,
     Exists,
-    LoadHistory { start: Option<i64>, up_to: Option<i64> },
+    LoadHistory {
+        start: Option<i64>,
+        up_to: Option<i64>,
+    },
     Append(Vec<(InfinityMessage, String)>),
     Spawn {
         new_id: String,
@@ -86,8 +89,13 @@ enum Op {
     MarkCompaction,
     IsCompaction,
     SpawnOrder,
-    SaveSummary { summary: String, up_to_order: i64 },
-    LoadSummary { up_to_order: Option<i64> },
+    SaveSummary {
+        summary: String,
+        up_to_order: i64,
+    },
+    LoadSummary {
+        up_to_order: Option<i64>,
+    },
 }
 
 enum Reply {
@@ -149,7 +157,9 @@ impl IndexedDbConversationStore {
 
 async fn open_db() -> Result<idb::Database, ConversationError> {
     let factory = idb::Factory::new().map_err(ConversationError::idb)?;
-    let mut request = factory.open(DB_NAME, Some(1)).map_err(ConversationError::idb)?;
+    let mut request = factory
+        .open(DB_NAME, Some(1))
+        .map_err(ConversationError::idb)?;
     request.on_upgrade_needed(|event| {
         if let Ok(db) = event.database() {
             // Both object stores are created here; `create_object_store` fails
@@ -290,12 +300,7 @@ async fn apply(db: &idb::Database, thread: &str, op: Op) -> Result<Reply, Conver
                     };
                     let child = ThreadRecord {
                         parent: Some(parent.clone()),
-                        root: Some(
-                            parent_record
-                                .root
-                                .clone()
-                                .unwrap_or_else(|| parent.clone()),
-                        ),
+                        root: Some(parent_record.root.clone().unwrap_or_else(|| parent.clone())),
                         spawn_order: Some(spawn_order),
                         spawn_tool_call: Some(tool_call),
                         subscription_event,
@@ -344,7 +349,9 @@ impl ConversationStore for IndexedDbConversationStore {
     type Error = ConversationError;
 
     async fn ensure_root_thread(&self, thread_id: &ThreadId<str>) -> Result<(), Self::Error> {
-        self.request(&key(thread_id), Op::EnsureRoot).await.map(|_| ())
+        self.request(&key(thread_id), Op::EnsureRoot)
+            .await
+            .map(|_| ())
     }
 
     async fn thread_exists(&self, thread_id: &ThreadId<str>) -> Result<bool, Self::Error> {
@@ -435,10 +442,7 @@ impl ConversationStore for IndexedDbConversationStore {
         &self,
         thread_id: &ThreadId<str>,
     ) -> Result<bool, Self::Error> {
-        match self
-            .request(&key(thread_id), Op::IsFreshContext)
-            .await?
-        {
+        match self.request(&key(thread_id), Op::IsFreshContext).await? {
             Reply::Bool(value) => Ok(value),
             _ => Err(ConversationError::ActorGone),
         }
@@ -449,9 +453,9 @@ impl ConversationStore for IndexedDbConversationStore {
         thread_id: &ThreadId<str>,
     ) -> Result<Option<(ThreadId, ToolCallId)>, Self::Error> {
         match self.request(&key(thread_id), Op::ParentInfo).await? {
-            Reply::ParentInfo(info) => Ok(info.map(|(parent, call)| {
-                (ThreadId::new(parent), ToolCallId::new(call))
-            })),
+            Reply::ParentInfo(info) => {
+                Ok(info.map(|(parent, call)| (ThreadId::new(parent), ToolCallId::new(call))))
+            }
             _ => Err(ConversationError::ActorGone),
         }
     }

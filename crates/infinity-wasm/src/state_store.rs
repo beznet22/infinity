@@ -10,9 +10,9 @@
 use std::collections::HashSet;
 
 use async_trait::async_trait;
+use idb::DatabaseEvent;
 use infinity_agent_core::system::UserChoice;
 use infinity_agent_core::traits::StateStore;
-use idb::DatabaseEvent;
 use js_sys::JsString;
 use rap_protocol::{ThreadId, ToolCallId};
 use serde::{Deserialize, Serialize};
@@ -175,7 +175,11 @@ async fn apply(db: &idb::Database, thread: &str, op: Op) -> Result<Reply, StoreE
             Reply::Unit
         }
         Op::AddChoice(choice) => {
-            if !state.pending_choices.iter().any(|known| known.id == choice.id) {
+            if !state
+                .pending_choices
+                .iter()
+                .any(|known| known.id == choice.id)
+            {
                 state.pending_choices.push(choice);
                 dirty = true;
             }
@@ -183,7 +187,9 @@ async fn apply(db: &idb::Database, thread: &str, op: Op) -> Result<Reply, StoreE
         }
         Op::RemoveChoice(id) => {
             let before = state.pending_choices.len();
-            state.pending_choices.retain(|known| known.id.as_ref() != id);
+            state
+                .pending_choices
+                .retain(|known| known.id.as_ref() != id);
             dirty |= before != state.pending_choices.len();
             Reply::Unit
         }
@@ -230,7 +236,10 @@ async fn save(db: &idb::Database, thread: &str, state: &ThreadState) -> Result<(
         .map_err(StoreError::idb)?
         .await
         .map_err(StoreError::idb)?;
-    tx.commit().map_err(StoreError::idb)?.await.map_err(StoreError::idb)?;
+    tx.commit()
+        .map_err(StoreError::idb)?
+        .await
+        .map_err(StoreError::idb)?;
     Ok(())
 }
 
@@ -242,7 +251,10 @@ impl StateStore for IndexedDbStateStore {
         &self,
         thread_id: &ThreadId<str>,
     ) -> Result<HashSet<String>, Self::Error> {
-        match self.request(thread_id.as_ref(), Op::GetProcessedIds).await? {
+        match self
+            .request(thread_id.as_ref(), Op::GetProcessedIds)
+            .await?
+        {
             Reply::Ids(ids) => Ok(ids),
             _ => Err(StoreError::ActorGone),
         }
@@ -262,7 +274,10 @@ impl StateStore for IndexedDbStateStore {
         &self,
         root_thread_id: &ThreadId<str>,
     ) -> Result<Option<serde_json::Value>, Self::Error> {
-        match self.request(root_thread_id.as_ref(), Op::GetMetadata).await? {
+        match self
+            .request(root_thread_id.as_ref(), Op::GetMetadata)
+            .await?
+        {
             Reply::Metadata(metadata) => Ok(metadata),
             _ => Err(StoreError::ActorGone),
         }
@@ -282,8 +297,13 @@ impl StateStore for IndexedDbStateStore {
         &self,
         thread_id: &ThreadId<str>,
     ) -> Result<Vec<ToolCallId>, Self::Error> {
-        match self.request(thread_id.as_ref(), Op::GetSubscriptions).await? {
-            Reply::Subscriptions(ids) => Ok(ids.iter().map(|id| ToolCallId::new(id.clone())).collect()),
+        match self
+            .request(thread_id.as_ref(), Op::GetSubscriptions)
+            .await?
+        {
+            Reply::Subscriptions(ids) => {
+                Ok(ids.iter().map(|id| ToolCallId::new(id.clone())).collect())
+            }
             _ => Err(StoreError::ActorGone),
         }
     }

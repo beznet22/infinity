@@ -164,10 +164,6 @@ struct HttpMcpTransport {
 }
 
 impl HttpMcpTransport {
-    async fn new(url: String, headers: HashMap<String, String>) -> Result<Self, BoxError> {
-        Self::with_client(url, headers, reqwest::Client::new()).await
-    }
-
     /// Build with a caller-supplied client (see `SimpleHttpClient::with_client`
     /// for why Android must pass its own TLS stack).
     async fn with_client(

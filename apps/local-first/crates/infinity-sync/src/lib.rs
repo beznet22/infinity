@@ -25,9 +25,9 @@ mod types;
 pub mod http;
 
 pub use lease::{
-    current_lease, lease_event, may_write, LeaseAction, LeasePayload, LeaseState, DEFAULT_TTL_MS,
+    DEFAULT_TTL_MS, LeaseAction, LeasePayload, LeaseState, current_lease, lease_event, may_write,
 };
-pub use snapshot::{replay, snapshot_event, SnapshotPayload};
+pub use snapshot::{SnapshotPayload, replay, snapshot_event};
 pub use store::{CursorStore, EventStore, FileEventStore};
 pub use types::{Cursor, DeviceId, EventKind, SessionId, SyncEvent, now_ms};
 
@@ -72,10 +72,13 @@ mod tests {
     #[test]
     fn ids_and_kinds_are_stable_on_the_wire() {
         assert_eq!(
-            serde_json::to_string(&EventKind::ToolResult).unwrap(),
+            serde_json::to_string(&EventKind::ToolResult).expect("serialize"),
             "\"tool_result\""
         );
         let device = DeviceId::new("phone");
-        assert_eq!(serde_json::to_string(&device).unwrap(), "\"phone\"");
+        assert_eq!(
+            serde_json::to_string(&device).expect("serialize"),
+            "\"phone\""
+        );
     }
 }
