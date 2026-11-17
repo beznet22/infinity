@@ -439,6 +439,13 @@ Asked explicitly; the honest state:
 - **Verified on the tablet:** seeded a SQLite log with two queued messages, launched the probe, got `{"reply":"beta","drained":2}`, and the pulled database showed 8 rows (`message_queued` ×2, `lease_claim`, `message_sent`, `assistant_message` ×2, release) with fences on every write.
 - **Cost, stated honestly:** `rusqlite` bundled compiles SQLite from source, which lengthens the Android build; the APK size increase was not measured this run.
 
+## D54 — One session view, one contract ✅
+- **What:** `session_view()` folds a log into `SessionView`: messages (id, role, text, version count, `reply_to`), queue, truncations with `active`, plus `holder`/`read_only`/`fence`/`last_seq`. The CLI prints it with `view --session`.
+- **Why:** Android and the browser would otherwise grow two folds over the same log and drift. A renderer that disagrees with the JSON is wrong, not merely different — that is what the golden test pins.
+- **Tests:** both backends produce an identical view from the same event set; the view reports a queued message, an active truncation and the restored tail; `read_only` flips when another device holds the lease; the serialized shape is asserted field by field.
+- **Cost:** the view is rebuilt per call, so it is linear in the session. Fine for local logs; pagination or caching belongs with the UI if sessions get large.
+- **Limit:** today only the CLI consumes it. The browser will call the same function through wasm and Android through a Tauri command in the UI step — until then the contract is pinned by tests, not by a second implementation.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

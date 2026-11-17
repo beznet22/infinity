@@ -22,6 +22,7 @@ mod store;
 mod summary;
 mod thread;
 mod types;
+mod view;
 
 #[cfg(feature = "http")]
 pub mod http;
@@ -41,6 +42,7 @@ pub use thread::{
     truncate_event, truncations, versions,
 };
 pub use types::{Cursor, DeviceId, EventKind, SessionId, SyncEvent, now_ms};
+pub use view::{SessionView, ViewMessage, ViewQueued, ViewTruncation, session_view};
 
 /// Errors raised by the sync layer.
 #[derive(Debug, thiserror::Error)]

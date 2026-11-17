@@ -26,7 +26,8 @@ use infinity_sync::{
     CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, LeaseGuard, Role,
     SessionId, SqliteEventStore, SyncEvent, current_lease, dequeue_event, enqueue_event,
     lease_event, message, message_event, next_fence, now_ms, queue, replay, restore_event,
-    send_event, snapshot_event, summarize, transcript, truncate_event, truncations, versions,
+    send_event, session_view, snapshot_event, summarize, transcript, truncate_event, truncations,
+    versions,
 };
 use uuid::Uuid;
 
@@ -709,6 +710,20 @@ async fn main() -> Result<(), String> {
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(args.interval.max(1))).await;
             }
+        }
+        "view" => {
+            // The canonical rendering contract: every surface reads this shape
+            // (D54). `resume` stays as the human-oriented summary.
+            let session = args.session.clone().ok_or("view needs --session")?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            let view = session_view(&session, &events, &args.device, now_ms());
+            println!(
+                "{}",
+                serde_json::to_string(&view).map_err(|e| e.to_string())?
+            );
         }
         other => return Err(format!("unknown command {other}")),
     }
