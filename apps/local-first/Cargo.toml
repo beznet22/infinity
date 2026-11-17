@@ -22,6 +22,7 @@ uuid = { version = "1", features = ["v4"] }
 tracing = "0.1"
 reqwest = { version = "0.13", default-features = false, features = ["json", "default-tls", "query"] }
 tempfile = "3"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [workspace.lints.rust]
 impl_trait_overcaptures = "warn"

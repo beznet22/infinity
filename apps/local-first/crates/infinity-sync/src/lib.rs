@@ -31,6 +31,8 @@ pub use lease::{
     may_write, next_fence,
 };
 pub use snapshot::{SnapshotPayload, replay, snapshot_event};
+#[cfg(feature = "sqlite")]
+pub use store::SqliteEventStore;
 pub use store::{CursorStore, EventStore, FileEventStore};
 pub use summary::{SessionSummary, summarize};
 pub use thread::{
@@ -59,6 +61,8 @@ pub enum SyncError {
     },
     #[error("lease lost: another device claimed the session")]
     LeaseLost,
+    #[error("sqlite: {0}")]
+    Sqlite(String),
     #[cfg(feature = "http")]
     #[error("transport error: {0}")]
     Transport(#[source] reqwest::Error),

@@ -24,9 +24,9 @@ use std::path::PathBuf;
 use infinity_sync::http::HttpTransport;
 use infinity_sync::{
     CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, LeaseGuard, Role,
-    SessionId, SyncEvent, current_lease, dequeue_event, enqueue_event, lease_event, message,
-    message_event, next_fence, now_ms, queue, replay, restore_event, send_event, snapshot_event,
-    summarize, transcript, truncate_event, truncations, versions,
+    SessionId, SqliteEventStore, SyncEvent, current_lease, dequeue_event, enqueue_event,
+    lease_event, message, message_event, next_fence, now_ms, queue, replay, restore_event,
+    send_event, snapshot_event, summarize, transcript, truncate_event, truncations, versions,
 };
 use uuid::Uuid;
 
@@ -44,7 +44,48 @@ struct Args {
     truncation: Option<Uuid>,
     interval: u64,
     iterations: u64,
+    store: String,
     assistant: bool,
+}
+
+/// Either backend behind the same trait, chosen with `--store`.
+enum Store {
+    File(FileEventStore),
+    Sqlite(SqliteEventStore),
+}
+
+impl EventStore for Store {
+    async fn append(&self, event: &SyncEvent) -> Result<(), infinity_sync::SyncError> {
+        match self {
+            Self::File(store) => store.append(event).await,
+            Self::Sqlite(store) => store.append(event).await,
+        }
+    }
+
+    async fn events_since(
+        &self,
+        session: &SessionId,
+        after_seq: u64,
+    ) -> Result<Vec<SyncEvent>, infinity_sync::SyncError> {
+        match self {
+            Self::File(store) => store.events_since(session, after_seq).await,
+            Self::Sqlite(store) => store.events_since(session, after_seq).await,
+        }
+    }
+
+    async fn last_seq(&self, session: &SessionId) -> Result<u64, infinity_sync::SyncError> {
+        match self {
+            Self::File(store) => store.last_seq(session).await,
+            Self::Sqlite(store) => store.last_seq(session).await,
+        }
+    }
+
+    async fn sessions(&self) -> Result<Vec<SessionId>, infinity_sync::SyncError> {
+        match self {
+            Self::File(store) => store.sessions().await,
+            Self::Sqlite(store) => store.sessions().await,
+        }
+    }
 }
 
 /// Stamp the writer's fencing token when it currently holds the session.
@@ -75,6 +116,7 @@ fn parse() -> Result<Args, String> {
     let mut truncation = None;
     let mut interval = 5u64;
     let mut iterations = 0u64;
+    let mut store_kind = "sqlite".to_owned();
     let mut assistant = false;
 
     let mut args = std::env::args().skip(1);
@@ -127,6 +169,7 @@ fn parse() -> Result<Args, String> {
                     .parse()
                     .map_err(|_| "--iterations must be a number".to_owned())?
             }
+            "--store" => store_kind = take("--store")?,
             "--assistant" => assistant = true,
             other if command.is_none() => command = Some(other.to_owned()),
             other => return Err(format!("unexpected argument {other}")),
@@ -147,6 +190,7 @@ fn parse() -> Result<Args, String> {
         truncation,
         interval,
         iterations,
+        store: store_kind,
         assistant,
     })
 }
@@ -154,7 +198,13 @@ fn parse() -> Result<Args, String> {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), String> {
     let args = parse()?;
-    let store = FileEventStore::new(&args.root);
+    let store = match args.store.as_str() {
+        "sqlite" => Store::Sqlite(
+            SqliteEventStore::open(args.root.join("events.sqlite")).map_err(|e| e.to_string())?,
+        ),
+        "jsonl" => Store::File(FileEventStore::new(&args.root)),
+        other => return Err(format!("unknown --store {other} (use sqlite or jsonl)")),
+    };
     let transport = match &args.relay {
         Some(url) => Some(HttpTransport::new(url.clone()).map_err(|e| e.to_string())?),
         None => None,

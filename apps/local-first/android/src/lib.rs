@@ -160,7 +160,8 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
     // once it is pushed.
     let device = read_sync_device(dir);
     let session = infinity_sync::SessionId::new("android-chat");
-    let lease_store = infinity_sync::FileEventStore::new(dir.join("sync"));
+    let lease_store = infinity_sync::SqliteEventStore::open(dir.join("sync/events.sqlite"))
+        .map_err(|error| format!("open store: {error}"))?;
     let relay = read_sync_relay(dir);
 
     // Pull first: the claim must be judged against what other devices already
@@ -374,7 +375,7 @@ async fn run_prompt(
     thread: &mut infinity_agent_core::system::local::ThreadHandle,
     prompt: String,
     guard: &mut infinity_sync::LeaseGuard,
-    lease_store: &infinity_sync::FileEventStore,
+    lease_store: &infinity_sync::SqliteEventStore,
     timeout_secs: u64,
     heartbeat: &mut tokio::time::Interval,
 ) -> Result<(String, Vec<String>, bool), String> {
@@ -423,7 +424,7 @@ fn read_hold_lease(dir: &std::path::Path) -> bool {
 
 /// Pull the session's events into the local log and advance the cursor.
 async fn pull_session(
-    store: &infinity_sync::FileEventStore,
+    store: &infinity_sync::SqliteEventStore,
     root: &std::path::Path,
     relay: &str,
     device: &infinity_sync::DeviceId,
@@ -461,7 +462,7 @@ async fn pull_session(
 
 /// Push everything this device knows for the session (the relay dedupes).
 async fn push_session(
-    store: &infinity_sync::FileEventStore,
+    store: &infinity_sync::SqliteEventStore,
     relay: &str,
     session: &infinity_sync::SessionId,
 ) -> Result<(), String> {
@@ -503,7 +504,8 @@ fn read_sync_device(dir: &std::path::Path) -> infinity_sync::DeviceId {
 async fn sync_probe(dir: &std::path::Path) -> Result<serde_json::Value, String> {
     use infinity_sync::http::HttpTransport;
     use infinity_sync::{
-        now_ms, CursorStore, DeviceId, EventKind, EventStore, FileEventStore, SessionId, SyncEvent,
+        CursorStore, DeviceId, EventKind, EventStore, SessionId, SqliteEventStore, SyncEvent,
+        now_ms,
     };
 
     let raw = std::fs::read_to_string(dir.join("sync-config.json"))
@@ -529,7 +531,8 @@ async fn sync_probe(dir: &std::path::Path) -> Result<serde_json::Value, String> 
     );
 
     let root = dir.join("sync");
-    let store = FileEventStore::new(&root);
+    let store = SqliteEventStore::open(root.join("sync/events.sqlite"))
+        .map_err(|error| format!("open store: {error}"))?;
     // Reuse the app's portable TLS client: reqwest's default stack stalls on
     // Android (D21), and the sync probe must not repeat that bug.
     let transport = HttpTransport::with_client(

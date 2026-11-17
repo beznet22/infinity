@@ -430,6 +430,15 @@ Asked explicitly; the honest state:
 - **Verified:** with a stub pull endpoint that returns nothing on the first request and one message on the second, `watch --interval 1 --iterations 2` printed `fetched 0` then `fetched 1, kinds ["UserMessage"]`, and `resume` afterwards showed the message from the other device.
 - **Limit, stated plainly:** this is not push. A quiet client notices a change up to `--interval` seconds later, and each idle poll is one HTTP request. Real push (DO + WebSocket, or Web Push for a closed browser tab) remains available as a deployment choice.
 
+## D53 — SQLite is the default log ✅
+- **Why:** JSONL can only truncate the last line on a crash, but it also cannot guarantee that a line reaches the disk, cannot index by `seq`, and re-reads the whole file per query. The log is the foundation every later feature writes through, so it moved first.
+- **Implementation:** `SqliteEventStore` (`rusqlite`, `bundled`) behind the existing `EventStore` trait. One explicit transaction per append, `INSERT OR IGNORE` on `(session_id, event_id)` for idempotent retries, `PRAGMA journal_mode=WAL` for concurrent readers, `synchronous=FULL` so a commit is on disk before it returns.
+- **Feature-gated:** `sqlite` is on by default; a consumer that only wants the file backend can turn it off. The browser keeps wa-sqlite over OPFS — same event shape, different engine.
+- **CLI:** `--store sqlite|jsonl`, default `sqlite`. JSONL stays for copy-friendly exports and old roots; the demo re-read a JSONL root with `--store jsonl` unchanged.
+- **Tests (31 in the crate):** the same contract as the file store; an uncommitted insert is invisible after reopen (crash simulation); identical events produce an identical `transcript` and identical fence round-trips on both backends.
+- **Verified on the tablet:** seeded a SQLite log with two queued messages, launched the probe, got `{"reply":"beta","drained":2}`, and the pulled database showed 8 rows (`message_queued` ×2, `lease_claim`, `message_sent`, `assistant_message` ×2, release) with fences on every write.
+- **Cost, stated honestly:** `rusqlite` bundled compiles SQLite from source, which lengthens the Android build; the APK size increase was not measured this run.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
