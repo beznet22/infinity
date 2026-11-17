@@ -42,6 +42,8 @@ struct Args {
     event: Option<Uuid>,
     reply_to: Option<Uuid>,
     truncation: Option<Uuid>,
+    interval: u64,
+    iterations: u64,
     assistant: bool,
 }
 
@@ -71,6 +73,8 @@ fn parse() -> Result<Args, String> {
     let mut event = None;
     let mut reply_to = None;
     let mut truncation = None;
+    let mut interval = 5u64;
+    let mut iterations = 0u64;
     let mut assistant = false;
 
     let mut args = std::env::args().skip(1);
@@ -113,6 +117,16 @@ fn parse() -> Result<Args, String> {
                         .map_err(|_| "--truncation must be a UUID".to_owned())?,
                 )
             }
+            "--interval" => {
+                interval = take("--interval")?
+                    .parse()
+                    .map_err(|_| "--interval must be seconds".to_owned())?
+            }
+            "--iterations" => {
+                iterations = take("--iterations")?
+                    .parse()
+                    .map_err(|_| "--iterations must be a number".to_owned())?
+            }
             "--assistant" => assistant = true,
             other if command.is_none() => command = Some(other.to_owned()),
             other => return Err(format!("unexpected argument {other}")),
@@ -131,6 +145,8 @@ fn parse() -> Result<Args, String> {
         event,
         reply_to,
         truncation,
+        interval,
+        iterations,
         assistant,
     })
 }
@@ -594,6 +610,55 @@ async fn main() -> Result<(), String> {
                 "{}",
                 serde_json::json!({ "restored": truncation, "visible": transcript(&events).len() })
             );
+        }
+        "watch" => {
+            // Polling, not push: the relay has no channel to the client, so the
+            // client asks again. Good enough to see another device's writes
+            // arrive; a real push channel is a separate deployment decision.
+            let transport = transport.ok_or("watch needs --relay")?;
+            let session = args.session.clone().ok_or("watch needs --session")?;
+            let cursors = CursorStore::new(&args.root, &args.device);
+            let mut rounds = 0u64;
+            loop {
+                rounds += 1;
+                let after = cursors
+                    .load()
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .get(session.as_str())
+                    .copied()
+                    .unwrap_or(0);
+                let stored = transport
+                    .pull(&session, after)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let mut highest = after;
+                let mut kinds = Vec::new();
+                for item in &stored {
+                    store.append(&item.event).await.map_err(|e| e.to_string())?;
+                    highest = highest.max(item.position);
+                    kinds.push(format!("{:?}", item.event.kind));
+                }
+                if !stored.is_empty() {
+                    cursors
+                        .set(&session, highest)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "round": rounds,
+                        "fetched": stored.len(),
+                        "position": highest,
+                        "kinds": kinds,
+                    })
+                );
+                if args.iterations != 0 && rounds >= args.iterations {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(args.interval.max(1))).await;
+            }
         }
         other => return Err(format!("unknown command {other}")),
     }

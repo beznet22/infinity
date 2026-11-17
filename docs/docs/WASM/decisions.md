@@ -424,6 +424,12 @@ Asked explicitly; the honest state:
 - **Layering:** this bridges at the app layer, as D33 requires; the fork's core `InMemoryDeferQueue` still handles mid-step inputs for callers that do not use the sync log.
 - **Remaining gap:** a second device learns about queue changes on its next pull. Closing that needs a push channel (WebSocket/DO) or polling; the relay deployment is currently absent by choice.
 
+## D52 — `watch` closes the propagation gap by polling ✅
+- **What:** `local-sync watch --session S --relay URL [--interval 5] [--iterations N]` pulls on an interval, appends whatever the relay has, advances the cursor, and prints one line per round: `{round, fetched, position, kinds}`.
+- **Why polling:** the relay has no channel to the client, and turning one on is a deployment decision (WebSocket/Durable Object). Polling needs no new infrastructure and keeps the cloud-optional property: stop the relay, and local use is unchanged.
+- **Verified:** with a stub pull endpoint that returns nothing on the first request and one message on the second, `watch --interval 1 --iterations 2` printed `fetched 0` then `fetched 1, kinds ["UserMessage"]`, and `resume` afterwards showed the message from the other device.
+- **Limit, stated plainly:** this is not push. A quiet client notices a change up to `--interval` seconds later, and each idle poll is one HTTP request. Real push (DO + WebSocket, or Web Push for a closed browser tab) remains available as a deployment choice.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
