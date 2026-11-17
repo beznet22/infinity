@@ -364,6 +364,16 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Operational note:** the default TTL is 60 s, so the test had to re-claim on A and start B within a minute. That is exactly the gap the foreground-service heartbeat closes next.
 - **Cleanup:** the tablet's test configs and the planted session log were removed; the relay was stopped (test-only, never deployed this time).
 
+## D45 — Foreground service keeps the turn and the lease alive ✅
+- **Service:** `InfinityForegroundService` (Kotlin, in the plugin) declares `foregroundServiceType="dataSync"`, requires `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_DATA_SYNC`, and shows a low-importance ongoing notification on channel `infinity-session`. The plugin exposes `start_foreground_service`/`stop_foreground_service`; the app starts it around the chat probe and stops it afterwards.
+- **Heartbeat:** the turn loop renews the lease every **5 s** (TTL 60 s, so two missed beats still leave the claim valid). The first `interval` tick is skipped because it fires immediately.
+- **Verified on the tablet (SM-T875):**
+  - while the turn ran, `dumpsys notification` showed `id=4711 … channel=infinity-session`;
+  - a short turn finished under 5 s and produced only `claim → release` (no renewal, as expected);
+  - a forced long turn (8 s, 6,527-char reply) produced `claim → renew → release`.
+- **Honest limits (not overclaimed):** a foreground service is not immortality — Android 12+ restricts starting it from the background, 14+ requires the declared type, 15 caps `dataSync` at ~6 h/day, and OEM builds still kill apps. The TTL is what protects other devices when the service dies anyway.
+- **Next correctness step:** a **fencing token** on claims (monotonic per session; the relay rejects appends carrying a stale one) closes the brief overlap that expiry alone permits.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

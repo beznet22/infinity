@@ -18,6 +18,7 @@ use rig::client::CompletionClient;
 use sandbox_core::executor::{ExecRequest, ProcessSandboxExecutor, SandboxExecutor};
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
+use tauri_plugin_infinity_android::InfinityAndroidExt;
 
 /// The bundle this host provides to the core.
 type AndroidHost = HostCtx<
@@ -226,20 +227,36 @@ async fn chat_probe(dir: &std::path::Path) -> Result<ChatOutcome, String> {
     let mut notes = Vec::new();
     let mut timed_out = false;
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(45);
+
+    // Keep the lease alive while the turn runs. The interval is shorter than the
+    // TTL so two missed beats still leave the claim valid; the foreground
+    // service (started by the caller) is what keeps this ticking when the app is
+    // backgrounded.
+    let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(5));
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    heartbeat.tick().await; // the first tick completes immediately; skip it
+
     loop {
-        match tokio::time::timeout_at(deadline, thread.recv()).await {
-            Ok(Some(AgentEvent::TextChunk { text })) => reply.push_str(&text),
-            Ok(Some(AgentEvent::CompletionFinished { .. })) => break,
-            Ok(Some(AgentEvent::Info { text })) => {
-                eprintln!("agent info: {text}");
-                notes.push(text);
+        tokio::select! {
+            _ = heartbeat.tick() => {
+                if let Err(error) = guard.renew(&lease_store).await {
+                    eprintln!("lease renew failed: {error}");
+                }
             }
-            Ok(Some(_)) => {}
-            Ok(None) => break,
-            Err(_) => {
-                timed_out = true;
-                break;
-            }
+            received = tokio::time::timeout_at(deadline, thread.recv()) => match received {
+                Ok(Some(AgentEvent::TextChunk { text })) => reply.push_str(&text),
+                Ok(Some(AgentEvent::CompletionFinished { .. })) => break,
+                Ok(Some(AgentEvent::Info { text })) => {
+                    eprintln!("agent info: {text}");
+                    notes.push(text);
+                }
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(_) => {
+                    timed_out = true;
+                    break;
+                }
+            },
         }
     }
 
@@ -578,7 +595,11 @@ pub fn run() {
                 });
             }
 
+            // The probe thread runs turns, so it needs the Android handle for the
+            // foreground service (start/stop around the chat probe).
+            let probe_handle = app.handle().clone();
             std::thread::spawn(move || {
+                let handle = probe_handle;
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
@@ -594,6 +615,12 @@ pub fn run() {
 
                     // The conversation probe only runs when a config was pushed.
                     if dir.join("chat-config.json").exists() {
+                        // Reliability layer: keeps the process (and the lease
+                        // heartbeat) alive if the user leaves the app.
+                        let service_started = handle
+                            .infinity_android()
+                            .start_foreground_service()
+                            .is_ok();
                         // Bound the probe: a provider error can otherwise be
                         // retried indefinitely, leaving no result file behind.
                         let outcome = tokio::time::timeout(
@@ -610,6 +637,9 @@ pub fn run() {
                             }
                         };
                         let _ = std::fs::write(dir.join("chat.json"), payload);
+                        if service_started {
+                            let _ = handle.infinity_android().stop_foreground_service();
+                        }
                     }
 
                     // Session sync: opt-in via sync-config.json, which carries the

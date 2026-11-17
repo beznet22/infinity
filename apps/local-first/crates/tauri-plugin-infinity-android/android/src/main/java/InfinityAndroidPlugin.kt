@@ -95,6 +95,29 @@ class InfinityAndroidPlugin(private val activity: Activity) : Plugin(activity) {
         resolveContactCount(invoke)
     }
 
+    /** Start the foreground service that keeps a running turn alive. */
+    @Command
+    fun startForegroundService(invoke: Invoke) {
+        try {
+            val intent = android.content.Intent(activity, InfinityForegroundService::class.java)
+            androidx.core.content.ContextCompat.startForegroundService(activity, intent)
+            invoke.resolve()
+        } catch (error: Exception) {
+            invoke.reject("could not start the foreground service: ${error.message}")
+        }
+    }
+
+    /** Stop it once the turn is finished. */
+    @Command
+    fun stopForegroundService(invoke: Invoke) {
+        try {
+            activity.stopService(android.content.Intent(activity, InfinityForegroundService::class.java))
+            invoke.resolve()
+        } catch (error: Exception) {
+            invoke.reject("could not stop the foreground service: ${error.message}")
+        }
+    }
+
     @Command
     fun shizukuStatus(invoke: Invoke) {
         val result = JSObject()

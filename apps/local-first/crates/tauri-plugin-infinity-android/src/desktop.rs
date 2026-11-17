@@ -50,6 +50,16 @@ impl InfinityAndroid {
         ))
     }
 
+    /// No-op on desktop: there is no foreground service to run.
+    pub fn start_foreground_service(&self) -> crate::Result<()> {
+        Ok(())
+    }
+
+    /// No-op on desktop.
+    pub fn stop_foreground_service(&self) -> crate::Result<()> {
+        Ok(())
+    }
+
     pub fn whatsapp_web_probe(&self) -> crate::Result<WhatsAppProbe> {
         Err(crate::Error::Unsupported(
             "the WhatsApp Web probe needs an Android WebView".to_string(),

@@ -319,6 +319,30 @@
           "markdownDescription": "Denies the shizuku_status command without any pre-configured scope."
         },
         {
+          "description": "Enables the start_foreground_service command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-foreground-service",
+          "markdownDescription": "Enables the start_foreground_service command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_foreground_service command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-foreground-service",
+          "markdownDescription": "Denies the start_foreground_service command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_foreground_service command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-foreground-service",
+          "markdownDescription": "Enables the stop_foreground_service command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_foreground_service command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-foreground-service",
+          "markdownDescription": "Denies the stop_foreground_service command without any pre-configured scope."
+        },
+        {
           "description": "Enables the whatsapp_pair command without any pre-configured scope.",
           "type": "string",
           "const": "allow-whatsapp-pair",
@@ -379,10 +403,10 @@
           "markdownDescription": "Denies the whatsapp_web_probe command without any pre-configured scope."
         },
         {
-          "description": "Enables counting contacts and probing Shizuku.\n#### This default permission set includes:\n\n- `allow-count-contacts`\n- `allow-shizuku-status`\n- `allow-whatsapp-web-probe`\n- `allow-whatsapp-pair`\n- `allow-whatsapp-state`\n- `allow-whatsapp-read`\n- `allow-whatsapp-send`",
+          "description": "Enables counting contacts and probing Shizuku.\n#### This default permission set includes:\n\n- `allow-count-contacts`\n- `allow-shizuku-status`\n- `allow-whatsapp-web-probe`\n- `allow-whatsapp-pair`\n- `allow-whatsapp-state`\n- `allow-whatsapp-read`\n- `allow-whatsapp-send`\n- `allow-start-foreground-service`\n- `allow-stop-foreground-service`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Enables counting contacts and probing Shizuku.\n#### This default permission set includes:\n\n- `allow-count-contacts`\n- `allow-shizuku-status`\n- `allow-whatsapp-web-probe`\n- `allow-whatsapp-pair`\n- `allow-whatsapp-state`\n- `allow-whatsapp-read`\n- `allow-whatsapp-send`"
+          "markdownDescription": "Enables counting contacts and probing Shizuku.\n#### This default permission set includes:\n\n- `allow-count-contacts`\n- `allow-shizuku-status`\n- `allow-whatsapp-web-probe`\n- `allow-whatsapp-pair`\n- `allow-whatsapp-state`\n- `allow-whatsapp-read`\n- `allow-whatsapp-send`\n- `allow-start-foreground-service`\n- `allow-stop-foreground-service`"
         }
       ]
     }

@@ -90,6 +90,20 @@ impl<R: Runtime> InfinityAndroid<R> {
             .map_err(Into::into)
     }
 
+    /// Start the foreground service that keeps a running turn alive.
+    pub fn start_foreground_service(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("startForegroundService", ())
+            .map_err(Into::into)
+    }
+
+    /// Stop the foreground service once the turn finished.
+    pub fn stop_foreground_service(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("stopForegroundService", ())
+            .map_err(Into::into)
+    }
+
     /// Reports whether Shizuku is installed and whether its privileged server is
     /// running. Never requires Shizuku to be present.
     pub fn shizuku_status(&self) -> crate::Result<ShizukuStatus> {

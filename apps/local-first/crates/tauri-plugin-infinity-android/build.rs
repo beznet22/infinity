@@ -6,6 +6,8 @@ const COMMANDS: &[&str] = &[
     "whatsapp_state",
     "whatsapp_read",
     "whatsapp_send",
+    "start_foreground_service",
+    "stop_foreground_service",
 ];
 
 fn main() {

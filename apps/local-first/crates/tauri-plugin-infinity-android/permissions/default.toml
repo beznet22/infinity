@@ -8,4 +8,6 @@ permissions = [
   "allow-whatsapp-state",
   "allow-whatsapp-read",
   "allow-whatsapp-send",
+  "allow-start-foreground-service",
+  "allow-stop-foreground-service",
 ]

@@ -52,3 +52,13 @@ pub(crate) async fn whatsapp_send<R: Runtime>(
     app.infinity_android()
         .whatsapp_send(&chat, &text, dry_run.unwrap_or(true))
 }
+
+#[command]
+pub(crate) async fn start_foreground_service<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    app.infinity_android().start_foreground_service()
+}
+
+#[command]
+pub(crate) async fn stop_foreground_service<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    app.infinity_android().stop_foreground_service()
+}

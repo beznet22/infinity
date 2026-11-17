@@ -11,6 +11,8 @@ Enables counting contacts and probing Shizuku.
 - `allow-whatsapp-state`
 - `allow-whatsapp-read`
 - `allow-whatsapp-send`
+- `allow-start-foreground-service`
+- `allow-stop-foreground-service`
 
 ## Permission Table
 
@@ -69,6 +71,58 @@ Enables the shizuku_status command without any pre-configured scope.
 <td>
 
 Denies the shizuku_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:allow-start-foreground-service`
+
+</td>
+<td>
+
+Enables the start_foreground_service command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:deny-start-foreground-service`
+
+</td>
+<td>
+
+Denies the start_foreground_service command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:allow-stop-foreground-service`
+
+</td>
+<td>
+
+Enables the stop_foreground_service command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:deny-stop-foreground-service`
+
+</td>
+<td>
+
+Denies the stop_foreground_service command without any pre-configured scope.
 
 </td>
 </tr>

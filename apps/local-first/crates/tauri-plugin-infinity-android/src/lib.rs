@@ -43,7 +43,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::whatsapp_pair,
             commands::whatsapp_state,
             commands::whatsapp_read,
-            commands::whatsapp_send
+            commands::whatsapp_send,
+            commands::start_foreground_service,
+            commands::stop_foreground_service
         ])
         .setup(|app, api| {
             #[cfg(mobile)]
