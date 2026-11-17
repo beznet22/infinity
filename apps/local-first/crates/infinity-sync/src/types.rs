@@ -70,6 +70,16 @@ pub enum EventKind {
     Snapshot,
     /// Ownership claim for running the session on one device at a time.
     LeaseClaim,
+    /// A user message written while the agent is busy; not yet in the transcript.
+    MessageQueued,
+    /// The queued message was delivered to the agent.
+    MessageSent,
+    /// The user removed a queued message before it was sent.
+    MessageDequeued,
+    /// Delete from a message onward; `restore` brings the tail back.
+    ConversationTruncated,
+    /// Undo a truncation by its event id.
+    ConversationRestored,
 }
 
 /// One immutable fact about a session.

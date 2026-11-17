@@ -406,6 +406,15 @@ Asked explicitly; the honest state:
 - **Why the log matters:** delete/restore must be events too (a tombstone plus a restore), otherwise a second device cannot tell the difference between "deleted" and "never received". Any UI-only delete would resurrect on the next pull.
 - **Sketch for the next chunk (#130):** `MessageQueued` (a message with `queued: true`), `MessageRemoved` (drops it from the queue), `MessageDeleted` (tombstone, hidden from `transcript`), `MessageRestored` (clears either removal or tombstone). Queue state and visibility are both folds over the log, so they survive a pull by definition.
 
+## D50 — Queue while the agent works; delete from a point and restore it ✅
+- **Enqueue:** `MessageQueued` records text the user wrote mid-turn. It is **not** part of the transcript until `MessageSent` arrives — the agent never sees a message the user has not delivered.
+- **Dequeue:** `MessageDequeued { target }` removes it permanently. A dequeued message has no `MessageSent`, so it can never be promoted by a later event.
+- **Order:** the queue is FIFO by enqueue time even if the agent takes messages out of order; the transcript sorts by enqueue `at`, so the user's intent is preserved.
+- **Delete from a point:** `ConversationTruncated { from }` hides `from` and every message after it. `ConversationRestored { truncation }` undoes one truncation by id. Both are folds over the log, so a second device that pulls sees the same deletion and the same undo.
+- **Verified:** queue two while "busy" (transcript empty) → dequeue one (1 left) → send the other (transcript 1, waiting 0) → add two more (3 visible) → delete from the second (1 visible) → restore (3 visible). Plus 28 crate tests, including one that reloads the log and still sees the truncation.
+- **Limits:** pull-based — a second device learns about queue/delete changes on its next pull, there is no push yet. The agent driver does not consume this queue yet (its own `InMemoryDeferQueue` still holds mid-step inputs); wiring the two together is the next integration step.
+- **Why not a UI-only delete:** it would resurrect on the next pull, and a peer could not tell "deleted" from "never received" (D49).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

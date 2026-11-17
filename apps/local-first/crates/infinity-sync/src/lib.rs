@@ -34,8 +34,9 @@ pub use snapshot::{SnapshotPayload, replay, snapshot_event};
 pub use store::{CursorStore, EventStore, FileEventStore};
 pub use summary::{SessionSummary, summarize};
 pub use thread::{
-    MessagePayload, Role, TranscriptEntry, alternatives, message, message_event, transcript,
-    versions,
+    MessagePayload, QueuedMessage, Role, TranscriptEntry, Truncation, alternatives, dequeue_event,
+    enqueue_event, message, message_event, queue, restore_event, send_event, transcript,
+    truncate_event, truncations, versions,
 };
 pub use types::{Cursor, DeviceId, EventKind, SessionId, SyncEvent, now_ms};
 

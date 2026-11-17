@@ -12,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::{EventKind, SessionId, SyncEvent, now_ms};
+use crate::types::{DeviceId, EventKind, SessionId, SyncEvent, now_ms};
 
 /// Payload carried by [`EventKind::UserMessage`] and
 /// [`EventKind::AssistantMessage`].
@@ -30,6 +30,54 @@ pub struct MessagePayload {
     /// Filled from the event itself when read back, never serialized by hand.
     #[serde(skip)]
     pub event_id: Uuid,
+}
+
+/// Payload carried by [`EventKind::MessageQueued`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QueuePayload {
+    pub text: String,
+    #[serde(default)]
+    pub at: u64,
+    #[serde(default)]
+    pub reply_to: Option<Uuid>,
+}
+
+/// Payload carried by [`EventKind::MessageSent`] and
+/// [`EventKind::MessageDequeued`]: the queued message they act on.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TargetPayload {
+    pub target: Uuid,
+}
+
+/// Payload carried by [`EventKind::ConversationTruncated`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TruncatePayload {
+    /// The first message to hide; everything after it is hidden too.
+    pub from: Uuid,
+}
+
+/// Payload carried by [`EventKind::ConversationRestored`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RestorePayload {
+    /// The truncation event to undo.
+    pub truncation: Uuid,
+}
+
+/// A message waiting for the agent, not yet part of the conversation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QueuedMessage {
+    pub event_id: Uuid,
+    pub text: String,
+    pub at: u64,
+    pub reply_to: Option<Uuid>,
+}
+
+/// A delete-from-here marker. `active` is false once it was restored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Truncation {
+    pub id: Uuid,
+    pub from: Uuid,
+    pub active: bool,
 }
 
 /// Who wrote a visible message.
@@ -69,17 +117,111 @@ fn superseded(events: &[SyncEvent]) -> Vec<Uuid> {
         .collect()
 }
 
+/// Queued messages that the agent already received.
+fn promoted(events: &[SyncEvent]) -> std::collections::HashSet<Uuid> {
+    events
+        .iter()
+        .filter(|event| event.kind == EventKind::MessageSent)
+        .filter_map(|event| serde_json::from_value::<TargetPayload>(event.payload.clone()).ok())
+        .map(|payload| payload.target)
+        .collect()
+}
+
+/// Queued messages the user removed.
+fn dequeued(events: &[SyncEvent]) -> std::collections::HashSet<Uuid> {
+    events
+        .iter()
+        .filter(|event| event.kind == EventKind::MessageDequeued)
+        .filter_map(|event| serde_json::from_value::<TargetPayload>(event.payload.clone()).ok())
+        .map(|payload| payload.target)
+        .collect()
+}
+
 fn messages(events: &[SyncEvent]) -> Vec<(Role, MessagePayload)> {
+    let promoted = promoted(events);
     let mut parsed: Vec<(usize, Role, MessagePayload)> = events
         .iter()
         .enumerate()
-        .filter_map(|(index, event)| parse(event).map(|(role, payload)| (index, role, payload)))
+        .filter_map(|(index, event)| {
+            if event.kind == EventKind::MessageQueued {
+                // A queued message joins the transcript only once it was sent.
+                if !promoted.contains(&event.event_id) {
+                    return None;
+                }
+                let payload = serde_json::from_value::<QueuePayload>(event.payload.clone()).ok()?;
+                return Some((
+                    index,
+                    Role::User,
+                    MessagePayload {
+                        text: payload.text,
+                        at: payload.at,
+                        reply_to: payload.reply_to,
+                        edited_from: None,
+                        event_id: event.event_id,
+                    },
+                ));
+            }
+            parse(event).map(|(role, payload)| (index, role, payload))
+        })
         .collect();
     // Log order is the writer's order; `at` breaks ties across devices.
     parsed.sort_by_key(|(index, _, payload)| (payload.at, *index));
     parsed
         .into_iter()
         .map(|(_, role, payload)| (role, payload))
+        .collect()
+}
+
+/// Messages waiting for the agent: queued, and neither sent nor removed.
+///
+/// This is the list a UI shows above the composer while a turn is running, in the
+/// order the user wrote them.
+pub fn queue(events: &[SyncEvent]) -> Vec<QueuedMessage> {
+    let sent = promoted(events);
+    let dropped = dequeued(events);
+    let mut waiting: Vec<(u64, usize, QueuedMessage)> = events
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| event.kind == EventKind::MessageQueued)
+        .filter(|(_, event)| !sent.contains(&event.event_id) && !dropped.contains(&event.event_id))
+        .filter_map(|(index, event)| {
+            let payload = serde_json::from_value::<QueuePayload>(event.payload.clone()).ok()?;
+            Some((
+                payload.at,
+                index,
+                QueuedMessage {
+                    event_id: event.event_id,
+                    text: payload.text,
+                    at: payload.at,
+                    reply_to: payload.reply_to,
+                },
+            ))
+        })
+        .collect();
+    waiting.sort_by_key(|(at, index, _)| (*at, *index));
+    waiting.into_iter().map(|(_, _, message)| message).collect()
+}
+
+/// Every delete-from-here marker, including restored ones.
+pub fn truncations(events: &[SyncEvent]) -> Vec<Truncation> {
+    let restored: std::collections::HashSet<Uuid> = events
+        .iter()
+        .filter(|event| event.kind == EventKind::ConversationRestored)
+        .filter_map(|event| serde_json::from_value::<RestorePayload>(event.payload.clone()).ok())
+        .map(|payload| payload.truncation)
+        .collect();
+
+    events
+        .iter()
+        .filter(|event| event.kind == EventKind::ConversationTruncated)
+        .filter_map(|event| {
+            let payload = serde_json::from_value::<TruncatePayload>(event.payload.clone()).ok()?;
+            Some(Truncation {
+                id: event.event_id,
+                from: payload.from,
+                active: !restored.contains(&event.event_id),
+            })
+        })
         .collect()
 }
 
@@ -142,9 +284,24 @@ pub fn transcript(events: &[SyncEvent]) -> Vec<TranscriptEntry> {
     let gone = superseded(events);
     let all = messages(events);
 
+    let mut hidden: Vec<Uuid> = gone;
+
+    // Deleting from a message hides it and everything after it, so the tail is
+    // gone as a block rather than message by message.
+    for truncation in truncations(events)
+        .into_iter()
+        .filter(|truncation| truncation.active)
+    {
+        if let Some(position) = all
+            .iter()
+            .position(|(_, payload)| payload.event_id == truncation.from)
+        {
+            hidden.extend(all[position..].iter().map(|(_, payload)| payload.event_id));
+        }
+    }
+
     // A reply to a hidden message is hidden too: the answer belonged to text the
     // user replaced.
-    let mut hidden: Vec<Uuid> = gone;
     let mut changed = true;
     while changed {
         changed = false;
@@ -195,10 +352,82 @@ pub fn alternatives(events: &[SyncEvent], parent: Option<Uuid>) -> Vec<Uuid> {
         .collect()
 }
 
+/// Queue a user message while the agent is busy.
+pub fn enqueue_event(
+    session: SessionId,
+    device: DeviceId,
+    seq: u64,
+    text: impl Into<String>,
+    reply_to: Option<Uuid>,
+) -> SyncEvent {
+    SyncEvent::new(
+        session,
+        device,
+        seq,
+        EventKind::MessageQueued,
+        serde_json::to_value(QueuePayload {
+            text: text.into(),
+            at: now_ms(),
+            reply_to,
+        })
+        .expect("bug: queue payload serializes"),
+    )
+}
+
+/// The agent received the queued message; it joins the transcript.
+pub fn send_event(session: SessionId, device: DeviceId, seq: u64, target: Uuid) -> SyncEvent {
+    SyncEvent::new(
+        session,
+        device,
+        seq,
+        EventKind::MessageSent,
+        serde_json::to_value(TargetPayload { target }).expect("bug: target payload serializes"),
+    )
+}
+
+/// The user removed the queued message before it was sent.
+pub fn dequeue_event(session: SessionId, device: DeviceId, seq: u64, target: Uuid) -> SyncEvent {
+    SyncEvent::new(
+        session,
+        device,
+        seq,
+        EventKind::MessageDequeued,
+        serde_json::to_value(TargetPayload { target }).expect("bug: target payload serializes"),
+    )
+}
+
+/// Delete the conversation from `from` onward. Reversible via [`restore_event`].
+pub fn truncate_event(session: SessionId, device: DeviceId, seq: u64, from: Uuid) -> SyncEvent {
+    SyncEvent::new(
+        session,
+        device,
+        seq,
+        EventKind::ConversationTruncated,
+        serde_json::to_value(TruncatePayload { from }).expect("bug: truncate payload serializes"),
+    )
+}
+
+/// Undo a truncation; everything it hid becomes visible again.
+pub fn restore_event(
+    session: SessionId,
+    device: DeviceId,
+    seq: u64,
+    truncation: Uuid,
+) -> SyncEvent {
+    SyncEvent::new(
+        session,
+        device,
+        seq,
+        EventKind::ConversationRestored,
+        serde_json::to_value(RestorePayload { truncation })
+            .expect("bug: restore payload serializes"),
+    )
+}
+
 /// Build a message event. `edited_from` makes it an edit of an earlier version.
 pub fn message_event(
     session: SessionId,
-    device: crate::DeviceId,
+    device: DeviceId,
     seq: u64,
     kind: EventKind,
     text: impl Into<String>,
@@ -331,6 +560,105 @@ mod tests {
         let rows = transcript(&[question, answer, improved]);
         let texts: Vec<&str> = rows.iter().map(|row| row.text.as_str()).collect();
         assert_eq!(texts, vec!["why?", "because of this"]);
+    }
+
+    #[test]
+    fn a_queued_message_waits_outside_the_transcript_until_sent() {
+        let queued = enqueue_event(session(), device(), 1, "while you work", None);
+        let queued_id = queued.event_id;
+
+        // Nothing the agent has not received may appear as conversation.
+        assert!(transcript(std::slice::from_ref(&queued)).is_empty());
+        assert_eq!(queue(std::slice::from_ref(&queued)).len(), 1);
+
+        let sent = send_event(session(), device(), 2, queued_id);
+        let rows = transcript(&[queued, sent.clone()]);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].text, "while you work");
+        assert!(queue(&[sent]).is_empty());
+    }
+
+    #[test]
+    fn dequeuing_removes_a_queued_message_for_good() {
+        let first = enqueue_event(session(), device(), 1, "drop me", None);
+        let second = enqueue_event(session(), device(), 2, "keep me", None);
+        let first_id = first.event_id;
+
+        let removed = dequeue_event(session(), device(), 3, first_id);
+        let events = vec![first, second.clone(), removed];
+
+        let waiting = queue(&events);
+        assert_eq!(waiting.len(), 1);
+        assert_eq!(waiting[0].event_id, second.event_id);
+
+        // Trying to send a dequeued message cannot resurrect it: it has no send.
+        let rows = transcript(&events);
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn queue_order_follows_when_the_user_wrote_them() {
+        let first = enqueue_event(session(), device(), 1, "first", None);
+        let second = enqueue_event(session(), device(), 2, "second", None);
+        // The agent takes the second one first (a tool call finished early).
+        let sent_second = send_event(session(), device(), 3, second.event_id);
+        let sent_first = send_event(session(), device(), 4, first.event_id);
+
+        let rows = transcript(&[first, second, sent_second, sent_first]);
+        let texts: Vec<&str> = rows.iter().map(|row| row.text.as_str()).collect();
+        assert_eq!(texts, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn deleting_from_a_message_hides_the_tail_and_restore_brings_it_back() {
+        let question = user(1, "q1", None, None);
+        let answer = assistant(2, "a1", Some(question.event_id));
+        let follow_up = user(3, "q2", None, None);
+        let follow_up_id = follow_up.event_id;
+        let last = assistant(4, "a2", Some(follow_up_id));
+
+        let truncation = truncate_event(session(), device(), 5, follow_up_id);
+        let truncation_id = truncation.event_id;
+        let events = vec![question, answer, follow_up, last, truncation];
+
+        let rows = transcript(&events);
+        let texts: Vec<&str> = rows.iter().map(|row| row.text.as_str()).collect();
+        assert_eq!(texts, vec!["q1", "a1"]);
+        assert_eq!(truncations(&events)[0].active, true);
+
+        let restored = restore_event(session(), device(), 6, truncation_id);
+        let events: Vec<SyncEvent> = events.into_iter().chain([restored]).collect();
+        let rows = transcript(&events);
+        assert_eq!(rows.len(), 4);
+        assert!(!truncations(&events)[0].active);
+    }
+
+    #[test]
+    fn a_truncation_survives_a_reload() {
+        // Delete and restore are log entries, so a second device that pulls the
+        // log sees the same conversation without any extra protocol.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = crate::FileEventStore::new(dir.path());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            use crate::EventStore;
+            let first = user(1, "keep", None, None);
+            let second = user(2, "hide", None, None);
+            let second_id = second.event_id;
+            let truncation = truncate_event(session(), device(), 3, second_id);
+            for event in [first, second, truncation] {
+                store.append(&event).await.expect("append");
+            }
+
+            let events = store.events_since(&session(), 0).await.expect("events");
+            let texts: Vec<String> = transcript(&events)
+                .into_iter()
+                .map(|row| row.text)
+                .collect();
+            assert_eq!(texts, vec!["keep".to_owned()]);
+        });
     }
 
     #[test]

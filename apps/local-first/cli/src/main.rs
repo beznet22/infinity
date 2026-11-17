@@ -8,6 +8,12 @@
 //! sync-device --root DIR --device ID write --session S --text "..." [--assistant --reply-to E]
 //! sync-device --root DIR --device ID edit  --session S --event E --text "..."
 //! sync-device --root DIR --device ID thread --session S
+//! sync-device --root DIR --device ID enqueue --session S --text "..."   # while a turn runs
+//! sync-device --root DIR --device ID dequeue --session S --event E
+//! sync-device --root DIR --device ID send    --session S --event E
+//! sync-device --root DIR --device ID queue   --session S
+//! sync-device --root DIR --device ID truncate --session S --event E      # delete from here
+//! sync-device --root DIR --device ID restore  --session S --truncation T
 //! ```
 //!
 //! Each device owns its own `--root`, which is exactly how the multi-device test
@@ -18,8 +24,9 @@ use std::path::PathBuf;
 use infinity_sync::http::HttpTransport;
 use infinity_sync::{
     CursorStore, DeviceId, EventKind, EventStore, FileEventStore, LeaseAction, LeaseGuard, Role,
-    SessionId, SyncEvent, current_lease, lease_event, message, message_event, next_fence, now_ms,
-    replay, snapshot_event, summarize, transcript, versions,
+    SessionId, SyncEvent, current_lease, dequeue_event, enqueue_event, lease_event, message,
+    message_event, next_fence, now_ms, queue, replay, restore_event, send_event, snapshot_event,
+    summarize, transcript, truncate_event, truncations, versions,
 };
 use uuid::Uuid;
 
@@ -34,6 +41,7 @@ struct Args {
     state: Option<String>,
     event: Option<Uuid>,
     reply_to: Option<Uuid>,
+    truncation: Option<Uuid>,
     assistant: bool,
 }
 
@@ -62,6 +70,7 @@ fn parse() -> Result<Args, String> {
     let mut state = None;
     let mut event = None;
     let mut reply_to = None;
+    let mut truncation = None;
     let mut assistant = false;
 
     let mut args = std::env::args().skip(1);
@@ -97,6 +106,13 @@ fn parse() -> Result<Args, String> {
                         .map_err(|_| "--reply-to must be a UUID".to_owned())?,
                 )
             }
+            "--truncation" => {
+                truncation = Some(
+                    take("--truncation")?
+                        .parse()
+                        .map_err(|_| "--truncation must be a UUID".to_owned())?,
+                )
+            }
             "--assistant" => assistant = true,
             other if command.is_none() => command = Some(other.to_owned()),
             other => return Err(format!("unexpected argument {other}")),
@@ -114,6 +130,7 @@ fn parse() -> Result<Args, String> {
         state,
         event,
         reply_to,
+        truncation,
         assistant,
     })
 }
@@ -428,6 +445,154 @@ async fn main() -> Result<(), String> {
                     "read_only": summary.read_only,
                     "transcript": rows,
                 })
+            );
+        }
+        "enqueue" => {
+            let session = args.session.clone().ok_or("enqueue needs --session")?;
+            let text = args.text.clone().ok_or("enqueue needs --text")?;
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let event = enqueue_event(
+                session.clone(),
+                args.device.clone(),
+                seq,
+                text,
+                args.reply_to,
+            );
+            let event = stamp_fence(&store, &session, &args.device, event)
+                .await
+                .map_err(|e| e.to_string())?;
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            let waiting = queue(
+                &store
+                    .events_since(&session, 0)
+                    .await
+                    .map_err(|e| e.to_string())?,
+            );
+            println!(
+                "{}",
+                serde_json::json!({ "queued": event.event_id, "waiting": waiting.len() })
+            );
+        }
+        "dequeue" => {
+            let session = args.session.clone().ok_or("dequeue needs --session")?;
+            let target = args.event.ok_or("dequeue needs --event")?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            if !queue(&events).iter().any(|entry| entry.event_id == target) {
+                return Err("that message is not queued".to_owned());
+            }
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let event = dequeue_event(session.clone(), args.device.clone(), seq, target);
+            let event = stamp_fence(&store, &session, &args.device, event)
+                .await
+                .map_err(|e| e.to_string())?;
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            println!(
+                "{}",
+                serde_json::json!({ "dequeued": target, "waiting": queue(&events).len() })
+            );
+        }
+        "send" => {
+            let session = args.session.clone().ok_or("send needs --session")?;
+            let target = args.event.ok_or("send needs --event")?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            if !queue(&events).iter().any(|entry| entry.event_id == target) {
+                return Err("that message is not queued".to_owned());
+            }
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let event = send_event(session.clone(), args.device.clone(), seq, target);
+            let event = stamp_fence(&store, &session, &args.device, event)
+                .await
+                .map_err(|e| e.to_string())?;
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            println!(
+                "{}",
+                serde_json::json!({ "sent": target, "messages": transcript(&events).len(), "waiting": queue(&events).len() })
+            );
+        }
+        "queue" => {
+            let session = args.session.clone().ok_or("queue needs --session")?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            let waiting: Vec<serde_json::Value> = queue(&events)
+                .into_iter()
+                .map(|entry| serde_json::json!({ "event": entry.event_id, "text": entry.text }))
+                .collect();
+            println!(
+                "{}",
+                serde_json::json!({ "session": session.as_str(), "waiting": waiting })
+            );
+        }
+        "truncate" => {
+            // Delete from a message onward. The event stays in the log; `restore`
+            // brings the tail back, and another device sees the same deletion.
+            let session = args.session.clone().ok_or("truncate needs --session")?;
+            let from = args
+                .event
+                .ok_or("truncate needs --event (the first message to delete)")?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            if !transcript(&events).iter().any(|row| row.event_id == from) {
+                return Err("no visible message with that --event id".to_owned());
+            }
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let event = truncate_event(session.clone(), args.device.clone(), seq, from);
+            let event = stamp_fence(&store, &session, &args.device, event)
+                .await
+                .map_err(|e| e.to_string())?;
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            println!(
+                "{}",
+                serde_json::json!({ "truncation": event.event_id, "from": from, "visible": transcript(&events).len() })
+            );
+        }
+        "restore" => {
+            let session = args.session.clone().ok_or("restore needs --session")?;
+            let truncation = args.truncation.ok_or("restore needs --truncation")?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            if !truncations(&events)
+                .iter()
+                .any(|entry| entry.id == truncation && entry.active)
+            {
+                return Err("no active truncation with that id".to_owned());
+            }
+            let seq = store.last_seq(&session).await.map_err(|e| e.to_string())? + 1;
+            let event = restore_event(session.clone(), args.device.clone(), seq, truncation);
+            let event = stamp_fence(&store, &session, &args.device, event)
+                .await
+                .map_err(|e| e.to_string())?;
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            let events = store
+                .events_since(&session, 0)
+                .await
+                .map_err(|e| e.to_string())?;
+            println!(
+                "{}",
+                serde_json::json!({ "restored": truncation, "visible": transcript(&events).len() })
             );
         }
         other => return Err(format!("unknown command {other}")),
