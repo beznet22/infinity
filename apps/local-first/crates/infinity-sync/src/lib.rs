@@ -19,6 +19,9 @@
 mod store;
 mod types;
 
+#[cfg(feature = "http")]
+pub mod http;
+
 pub use store::{CursorStore, EventStore, FileEventStore};
 pub use types::{Cursor, DeviceId, EventKind, SessionId, SyncEvent, now_ms};
 
@@ -39,6 +42,12 @@ pub enum SyncError {
         #[source]
         error: serde_json::Error,
     },
+    #[cfg(feature = "http")]
+    #[error("transport error: {0}")]
+    Transport(#[source] reqwest::Error),
+    #[cfg(feature = "http")]
+    #[error("relay rejected the request ({status}): {body}")]
+    Relay { status: u16, body: String },
 }
 
 impl SyncError {

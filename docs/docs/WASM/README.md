@@ -118,7 +118,7 @@ PATH="$TC/bin:$PATH" env \
   cargo check --target aarch64-linux-android -p infinity-host
 ```
 
-- The consumer archetype lives in `apps/android-tauri` (excluded from the workspace, D16). It needs the Tauri CLI via pnpm (`pnpm install`), then `pnpm tauri android init --ci` and `pnpm tauri android build --apk --target <abi> --ci`.
+- The consumer archetype lives in `apps/local-first/android` (excluded from the workspace, D16). It needs the Tauri CLI via pnpm (`pnpm install`), then `pnpm tauri android init --ci` and `pnpm tauri android build --apk --target <abi> --ci`.
 - `frontendDist` in `tauri.conf.json` is resolved relative to the config file, and `bundle.targets` accepts `"all"` (not `["apk"]` — the APK comes from the `--apk` flag).
 
 ## Verifying a wasm build

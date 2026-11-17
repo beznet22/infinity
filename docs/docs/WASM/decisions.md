@@ -97,7 +97,7 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
   - **Follow-on:** the same pattern must be applied to `Tool`, `InputSender`, and the store traits in `infinity-agent-core` (chunk 0.5) — the source of its 15 remaining wasm errors.
 
 ## D16 — Fork scope: crates are the product; `apps/` are consumer archetypes ✅
-- **Correction (user):** `apps/android-tauri` and `apps/cloudflare-worker` are not fork-workspace directories — they are archetypes for any codebase that consumes the fork.
+- **Correction (user):** `apps/local-first/android` and `apps/cloudflare-worker` are not fork-workspace directories — they are archetypes for any codebase that consumes the fork.
 - **Decision:** the fork's deliverable surface is **crates** (core, `infinity-wasm`, `infinity-remote-adapters`, sandbox traits). Android Tauri apps and Cloudflare workers are built by consumers on top of those crates; the blueprint documents the archetypes (§3 capability table, §6 layout note, §7 build-order items 2/4) as reference implementations that double as integration tests for the crate APIs.
 - **Rationale:** keeps the fork a framework — no app concerns (signing, store deployment, wrangler accounts, per-consumer capabilities/scopes). Consumers own their app shells, permission configuration, and deployment topology.
 - **Rejected:** shipping `apps/` as fork workspace members (couples the framework to one app shape and one deployment); dropping the archetypes from the blueprint (they are the integration documentation consumers need).
@@ -138,14 +138,14 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Finding (measured on device):** without that crate's Android initialization the handshake **stalls** — no error, no log line, no `AgentEvent::Info`. Two probes timed out at 60 s with `reply: ""` and `notes: []` while the same key/model answered `HTTP 200` from the host in 2 s. The crate needs `init_with_env`/`init_with_runtime` (JNI `Env` + Android `Context`) **and** a Kotlin AAR in the Gradle build; upstream confirms both requirements ([reqwest#2966](https://github.com/seanmonstar/reqwest/issues/2966), [tauri#13267](https://github.com/tauri-apps/tauri/issues/13267)).
 - **Decision:** build a `rustls::ClientConfig` from `webpki-roots` compiled into the binary, hand it to `reqwest` via `use_preconfigured_tls`, and inject the client into rig with `.http_client(...)`.
 - **Rejected:** (a) shipping the AAR + `init_with_env` — the AAR lives in `gen/android`, which is regenerated and git-ignored, so every consumer would have to redo it; (b) `targetSdkVersion 28` to dodge the verifier — not viable for a current app; (c) plain HTTP — unacceptable for a real key.
-- **Consequence:** the platform trust store is bypassed, so user-installed and corporate CAs do not apply. This is the same posture as the browser target, where no OS store exists either. Apps that need private CAs must ship the AAR and initialize the verifier before the first request — recorded in `apps/android-tauri/README.md`.
+- **Consequence:** the platform trust store is bypassed, so user-installed and corporate CAs do not apply. This is the same posture as the browser target, where no OS store exists either. Apps that need private CAs must ship the AAR and initialize the verifier before the first request — recorded in `apps/local-first/android/README.md`.
 - **Verified:** `chat.json` → `{"model":"gemma-4-31b","reply":"infinity-on-android-llm","notes":[],"timed_out":false}`, ~10 s, and `cargo check --target aarch64-linux-android` clean.
 
 ## D22 — The Android plugin lives under the app, not in `crates/` ✅
 - **Question:** `tauri-plugin-infinity-android` was scaffolded into `crates/`; should it stay there?
-- **Decision (user):** move it to `apps/android-tauri/crates/tauri-plugin-infinity-android`.
+- **Decision (user):** move it to `apps/local-first/android/crates/tauri-plugin-infinity-android`.
 - **Why:** it is an implementation detail of one archetype, not a crate the fork publishes. Inside the app it becomes a member of the app's own workspace, so it shares `target/` and `cargo fmt --all` instead of duplicating a build tree, and the fork's workspace never pulls a desktop `tauri` build (which would need `webkit2gtk` on Linux CI).
-- **Mechanics:** the app declares `path = "crates/tauri-plugin-infinity-android"`; the root `exclude` stays `["apps/android-tauri"]`; the generated `gen/android/tauri.settings.gradle` picks the Android library up automatically from the plugin's `build.rs` (`android_path("android")`).
+- **Mechanics:** the app declares `path = "crates/tauri-plugin-infinity-android"`; the root `exclude` stays `["apps/local-first/android"]`; the generated `gen/android/tauri.settings.gradle` picks the Android library up automatically from the plugin's `build.rs` (`android_path("android")`).
 - **Verified:** `cargo metadata` lists both packages in the app workspace; APK rebuilt after the move; all three probes still pass on the device, and the Gradle settings file points at the new path.
 
 ## D23 — On-device tools run as Wasm modules, not extracted executables ✅
@@ -154,7 +154,7 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Decision:** B by default; A stays as the escape hatch for binaries that cannot be compiled to Wasm.
 - **Measured cost (aarch64-linux-android, release, `llvm-strip`, empty `cdylib`):** 308 KB baseline vs 1.44 MB with `wasmi` 1.x (`Engine` + `Module::new`) — **+1.16 MB**.
 - **Rejected as default:** `wasmtime` — the official minimal C API build is 2.1 MB, the Rust crate is larger, and its JIT pages were not validated on this device. `wasmi` is an interpreter: no executable memory, deterministic, and its fuel metering matches the slice model.
-- **Consequences:** (1) tools must be distributed as `.wasm`, so tools that need a real OS (git, package managers, preview servers) fall back to option A or to the optional edge; (2) executables shipped via option A still need `patchelf --set-rpath '$ORIGIN'` plus their shared libraries, which is documented in `apps/android-tauri/README.md`; (3) `SandboxExecutor` is the seam that keeps this choice out of the core.
+- **Consequences:** (1) tools must be distributed as `.wasm`, so tools that need a real OS (git, package managers, preview servers) fall back to option A or to the optional edge; (2) executables shipped via option A still need `patchelf --set-rpath '$ORIGIN'` plus their shared libraries, which is documented in `apps/local-first/android/README.md`; (3) `SandboxExecutor` is the seam that keeps this choice out of the core.
 
 ## D24 — WhatsApp Web is shown, never automated ✅
 - **Question:** the blueprint promised "WhatsApp control" through an embedded WebView with JS injection. Does that work, and should the fork build it?

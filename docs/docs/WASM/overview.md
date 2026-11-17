@@ -70,7 +70,7 @@ Full-featured operation — **including long-running tasks — works with zero c
 
 ## 3. End-to-End Architecture on Android (Tauri v2) **[plan]**
 
-> None of the Android surface exists in this repo — and most of it is **consumer-side**: the fork ships the Rust core and reusable crates; a consuming Tauri v2 app (the `apps/android-tauri` archetype, §6) supplies the Kotlin plugin layer. What is verified is every platform mechanism below: Tauri v2 mobile (`tauri android dev`), Kotlin plugins with `@Command` methods ([mobile plugin development](https://v2.tauri.app/develop/plugins/develop-mobile/)), Android webview debugging via `chrome://inspect` ([Tauri develop guide](https://v2.tauri.app/develop/)), and the Android framework APIs named.
+> None of the Android surface exists in this repo — and most of it is **consumer-side**: the fork ships the Rust core and reusable crates; a consuming Tauri v2 app (the `apps/local-first/android` archetype, §6) supplies the Kotlin plugin layer. What is verified is every platform mechanism below: Tauri v2 mobile (`tauri android dev`), Kotlin plugins with `@Command` methods ([mobile plugin development](https://v2.tauri.app/develop/plugins/develop-mobile/)), Android webview debugging via `chrome://inspect` ([Tauri develop guide](https://v2.tauri.app/develop/)), and the Android framework APIs named.
 
 | Capability | Android / Kotlin layer | Rust / Infinity bridge |
 |---|---|---|
@@ -169,7 +169,7 @@ When ready to start coding in `infinity-hybrid`, the modules in dependency order
 
 0. **WASM readiness (Phase 0)** — clear the compiler-verified blockers of §9 so `cargo check --target wasm32-unknown-unknown` passes for the core set (`infinity-provider-protocol` is already green; then the protocol crates, `infinity-agent-core`, wasm transports in `infinity-mcp-bridge`, sandbox traits). Everything else builds on this.
 1. **Core traits** (`crates/infinity-agent-core`) — define `SandboxExecutor`, `AgentCoordinator`, `SliceRunner` with `wasm32` feature gates; keep `McpTransport` as the transport contract (extend with an HTTP/SSE impl later).
-2. **Consumer archetype: Android Tauri app** (`apps/android-tauri`, consumer-side) — a reference consuming app scaffolding the Kotlin bridges (Shizuku shell, `NotificationListenerService`, WhatsApp `WebViewClient`) over the fork's crates; doubles as the integration test for the crate APIs.
+2. **Consumer archetype: Android Tauri app** (`apps/local-first/android`, consumer-side) — a reference consuming app scaffolding the Kotlin bridges (Shizuku shell, `NotificationListenerService`, WhatsApp `WebViewClient`) over the fork's crates; doubles as the integration test for the crate APIs.
 3. **Browser runtime** (`crates/infinity-wasm`) — wire the sandbox (§5 candidates), OPFS, and IndexedDB into `wasm-bindgen` entrypoints; develop with the tooling in §8.
 4. **Consumer archetype: Cloudflare worker** (`apps/cloudflare-worker`, consumer-side) — a reference edge slice runner and RAP callback router (Durable Objects + Agents SDK) built on `crates/infinity-remote-adapters`; doubles as the integration test for the edge crates.
 

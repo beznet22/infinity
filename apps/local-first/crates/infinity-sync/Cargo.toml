@@ -13,7 +13,13 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt"] }
 uuid = { workspace = true, features = ["v7", "serde"] }
+reqwest = { workspace = true, optional = true }
 tracing = { workspace = true }
+
+[features]
+default = ["http"]
+# HTTP transport: the dev relay now, a Cloudflare Worker later.
+http = ["dep:reqwest"]
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -4,7 +4,6 @@ members = [
     "crates/infinity-agent-lambda",
     "crates/infinity-host",
     "crates/infinity-wasm",
-    "crates/infinity-sync",
     "crates/infinity-mcp-bridge",
     "crates/infinity-rap-bridge",
     "crates/infinity-agent-cli",
@@ -30,7 +29,7 @@ members = [
 # fork's workspace from trying to own them. Nested crates (the Android plugin
 # under `apps/android-tauri/crates/`) belong to the app's workspace, so the
 # fork never pulls a desktop `tauri` build.
-exclude = ["apps/android-tauri"]
+exclude = ["apps/local-first"]
 resolver = "2"
 
 [workspace.package]

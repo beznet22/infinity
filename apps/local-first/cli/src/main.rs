@@ -1,0 +1,125 @@
+//! One device in the sync end-to-end test.
+//!
+//! ```text
+//! sync-device --root DIR --device ID [--relay URL] write --session S --text "..."
+//! sync-device --root DIR --device ID --relay URL push
+//! sync-device --root DIR --device ID --relay URL pull  --session S
+//! sync-device --root DIR --device ID sessions
+//! ```
+//!
+//! Each device owns its own `--root`, which is exactly how the multi-device test
+//! simulates a phone and a laptop.
+
+use std::path::PathBuf;
+
+use infinity_sync::http::HttpTransport;
+use infinity_sync::{now_ms, DeviceId, EventKind, EventStore, FileEventStore, SessionId, SyncEvent};
+
+struct Args {
+    root: PathBuf,
+    device: DeviceId,
+    relay: Option<String>,
+    command: String,
+    session: Option<SessionId>,
+    text: Option<String>,
+}
+
+fn parse() -> Result<Args, String> {
+    let mut root = None;
+    let mut device = None;
+    let mut relay = None;
+    let mut command = None;
+    let mut session = None;
+    let mut text = None;
+
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        let mut take = |name: &str| -> Result<String, String> {
+            args.next()
+                .ok_or_else(|| format!("{name} needs a value"))
+        };
+        match arg.as_str() {
+            "--root" => root = Some(PathBuf::from(take("--root")?)),
+            "--device" => device = Some(DeviceId::new(take("--device")?)),
+            "--relay" => relay = Some(take("--relay")?),
+            "--session" => session = Some(SessionId::new(take("--session")?)),
+            "--text" => text = Some(take("--text")?),
+            other if command.is_none() => command = Some(other.to_string()),
+            other => return Err(format!("unexpected argument {other}")),
+        }
+    }
+
+    Ok(Args {
+        root: root.ok_or("--root is required")?,
+        device: device.ok_or("--device is required")?,
+        relay,
+        command: command.ok_or("a command is required")?,
+        session,
+        text,
+    })
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), String> {
+    let args = parse()?;
+    let store = FileEventStore::new(&args.root);
+    let transport = match &args.relay {
+        Some(url) => Some(HttpTransport::new(url.clone()).map_err(|e| e.to_string())?),
+        None => None,
+    };
+
+    match args.command.as_str() {
+        "write" => {
+            let session = args.session.clone().ok_or("write needs --session")?;
+            let text = args.text.clone().ok_or("write needs --text")?;
+            let seq = store
+                .last_seq(&session)
+                .await
+                .map_err(|e| e.to_string())?
+                + 1;
+            let event = SyncEvent::new(
+                session.clone(),
+                args.device.clone(),
+                seq,
+                EventKind::UserMessage,
+                serde_json::json!({ "text": text, "at": now_ms() }),
+            );
+            store.append(&event).await.map_err(|e| e.to_string())?;
+            println!(
+                "{}",
+                serde_json::json!({ "session": session.as_str(), "seq": seq, "event": event.event_id })
+            );
+        }
+        "push" => {
+            let transport = transport.ok_or("push needs --relay")?;
+            let mut pushed = 0usize;
+            let sessions = store.sessions().await.map_err(|e| e.to_string())?;
+            for session in sessions {
+                let events = store.events_since(&session, 0).await.map_err(|e| e.to_string())?;
+                let ack = transport.push(&events).await.map_err(|e| e.to_string())?;
+                pushed += ack.accepted;
+            }
+            println!("{}", serde_json::json!({ "accepted": pushed }));
+        }
+        "pull" => {
+            let transport = transport.ok_or("pull needs --relay")?;
+            let session = args.session.clone().ok_or("pull needs --session")?;
+            let local_last = store.last_seq(&session).await.map_err(|e| e.to_string())?;
+            let events = transport.pull(&session, local_last).await.map_err(|e| e.to_string())?;
+            for event in &events {
+                store.append(event).await.map_err(|e| e.to_string())?;
+            }
+            println!(
+                "{}",
+                serde_json::json!({ "session": session.as_str(), "fetched": events.len(), "last_seq": store.last_seq(&session).await.map_err(|e| e.to_string())? })
+            );
+        }
+        "sessions" => {
+            let sessions = store.sessions().await.map_err(|e| e.to_string())?;
+            let names: Vec<&str> = sessions.iter().map(|s| s.as_str()).collect();
+            println!("{}", serde_json::json!({ "sessions": names }));
+        }
+        other => return Err(format!("unknown command {other}")),
+    }
+    Ok(())
+}

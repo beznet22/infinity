@@ -129,11 +129,11 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 
 ## Chunk 2 — Phase 2: Consumer Archetype — Android Tauri App (consumer-side, D16)
 
-**Goal.** A reference consuming app (`apps/android-tauri`; standalone project referencing the fork crates by git/path) proving the crate APIs end-to-end on Android, including long-running operation with **no cloud** (D17).
+**Goal.** A reference consuming app (`apps/local-first/android`; standalone project referencing the fork crates by git/path) proving the crate APIs end-to-end on Android, including long-running operation with **no cloud** (D17).
 
 ### 2.1 Scaffold + host wiring *(implemented)*
 
-*As implemented:* `apps/android-tauri` (excluded from the workspace, own `[workspace]`), Tauri CLI via pnpm, `android init`, and APKs built for `x86_64` and `aarch64`. Verified build pitfalls are documented in the archetype README (`frontendDist` relative to the config; `bundle.targets = "all"`; RGBA icons; valid `JAVA_HOME`; NDK `CC`/`AR`/linker env). FGS is **not** wired yet — the base app builds and runs first.
+*As implemented:* `apps/local-first/android` (excluded from the workspace, own `[workspace]`), Tauri CLI via pnpm, `android init`, and APKs built for `x86_64` and `aarch64`. Verified build pitfalls are documented in the archetype README (`frontendDist` relative to the config; `bundle.targets = "all"`; RGBA icons; valid `JAVA_HOME`; NDK `CC`/`AR`/linker env). FGS is **not** wired yet — the base app builds and runs first.
 
 - `tauri init` + `tauri android init`; `tauri-plugin-background-service` (foreground service, `START_STICKY`); `reqwest` switched to rustls features (D11); `INTERNET` permission; assemble `HostCtx` natively (JSON-file stores in the app data dir → `memory_store.rs` pattern; tokio current-thread in the service loop; file-based `ThreadConfigSource`).
 - **Accept:** `tauri android build` succeeds; runtime boots inside the foreground service.

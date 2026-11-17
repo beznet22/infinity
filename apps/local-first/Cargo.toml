@@ -1,0 +1,47 @@
+# Consumer archetype workspace (D16): the local-first app's sync layer.
+#
+# Deliberately NOT a member of the fork's workspace: the fork ships the agent
+# core; this app owns its replication model. It repeats the small subset of
+# workspace settings it needs so it can be copied into another codebase whole.
+[workspace]
+members = ["crates/infinity-sync", "cli"]
+# Needs `tauri` (and a desktop webkit stack on the host), so it is built by the
+# Android app that consumes it, never by the archetype workspace.
+exclude = ["crates/tauri-plugin-infinity-android"]
+resolver = "2"
+
+[workspace.package]
+repository = "https://github.com/hydro-project/infinity"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "default-tls", "query"] }
+tempfile = "3"
+
+[workspace.lints.rust]
+impl_trait_overcaptures = "warn"
+missing_unsafe_on_extern = "deny"
+unsafe_attr_outside_unsafe = "deny"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+alloc_instead_of_core = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+double_must_use = "allow"
+explicit_into_iter_loop = "warn"
+let_and_return = "allow"
+manual_is_variant_and = "warn"
+manual_let_else = "warn"
+redundant_clone = "warn"
+self_named_module_files = "warn"
+str_to_string = "warn"
+try_err = "warn"
+uninlined_format_args = "allow"
+unused_async = "warn"
+unwrap_used = "warn"

@@ -25,12 +25,12 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 
 # Fork crates. `sandbox-core` keeps its default `native` feature: the Android
 # process executor lives there.
-infinity-host = { path = "../../crates/infinity-host" }
-infinity-agent-core = { path = "../../crates/infinity-agent-core" }
-infinity-provider-protocol = { path = "../../crates/infinity-provider-protocol" }
-infinity-provider-rig = { path = "../../crates/infinity-provider-rig" }
-rap-client = { path = "../../crates/rap-client" }
-sandbox-core = { path = "../../crates/sandbox-core" }
+infinity-host = { path = "../../../crates/infinity-host" }
+infinity-agent-core = { path = "../../../crates/infinity-agent-core" }
+infinity-provider-protocol = { path = "../../../crates/infinity-provider-protocol" }
+infinity-provider-rig = { path = "../../../crates/infinity-provider-rig" }
+rap-client = { path = "../../../crates/rap-client" }
+sandbox-core = { path = "../../../crates/sandbox-core" }
 # OpenAI-compatible HTTP backend for the on-device conversation probe (Kimchi,
 # OpenRouter, …). Providers are not feature-gated in rig-core; only the HTTP
 # stack is.
@@ -46,6 +46,6 @@ webpki-roots = "1"
 # Native Android capabilities that neither the browser nor the desktop can
 # provide. The plugin is excluded from the fork workspace: it needs `tauri` and
 # is only built from this app.
-tauri-plugin-infinity-android = { path = "crates/tauri-plugin-infinity-android" }
+tauri-plugin-infinity-android = { path = "../crates/tauri-plugin-infinity-android" }
 # Notifications use the official plugin; Android 13+ needs POST_NOTIFICATIONS.
 tauri-plugin-notification = "2"
