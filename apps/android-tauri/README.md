@@ -68,6 +68,23 @@ with `.http_client(...)`.
 that method replaces the type parameter — pin it:
 `CompletionsClient::<reqwest::Client>::builder()`.
 
+## WhatsApp Web prototype
+
+Opt-in: create a `whatsapp-probe` marker in the app data dir and relaunch. The
+plugin overlays a WebView with a desktop user agent and writes `whatsapp.json`:
+
+```json
+{ "url": "https://web.whatsapp.com/", "title": "WhatsApp", "readyState": "complete",
+  "qrCanvas": true, "canvasCount": 1, "serviceWorker": true, "indexedDb": true,
+  "subtleCrypto": true }
+```
+
+The real client boots and renders its QR; `screencap` shows the genuine login
+screen. **Pairing itself needs a human** to scan the QR, and WhatsApp's Help Center
+names unofficial clients and automation as ban triggers, so the fork shows the
+view and ships no message automation (decision D24). Delete the marker afterwards
+— the overlay is full-screen.
+
 ## Running tools on Android
 
 Android 10+ denies `exec` on files in the app's writable data directory (for apps

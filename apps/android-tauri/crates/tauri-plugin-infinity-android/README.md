@@ -12,6 +12,12 @@ those two abilities — nothing else.
 | --- | --- | --- |
 | `count_contacts` | Counts the contacts the app is allowed to read | The first call shows Android's "allow access to contacts?" prompt |
 | `shizuku_status` | Reports whether Shizuku is installed and whether its server is running | Nothing — it only reports |
+| `whatsapp_web_probe` | Loads `web.whatsapp.com` in an overlay WebView and reports whether the real client booted (QR canvas, service worker, IndexedDB, WebCrypto) | The page covers the screen while it loads |
+
+`whatsapp_web_probe` is a **prototype**: linking needs a human to scan the QR,
+and WhatsApp's terms forbid unofficial clients and automation, so it never sends a
+message. It only runs when a `whatsapp-probe` marker file exists in the app data
+directory, which keeps the overlay out of normal launches.
 
 ## Two halves, one plugin
 

@@ -39,6 +39,16 @@ impl<R: Runtime> InfinityAndroid<R> {
             .map_err(Into::into)
     }
 
+    /// Loads web.whatsapp.com in an overlay WebView and reports what booted.
+    ///
+    /// Blocks until the page finishes loading and the probe JS answers (tens of
+    /// seconds on a cold load), so call it off the UI thread.
+    pub fn whatsapp_web_probe(&self) -> crate::Result<WhatsAppProbe> {
+        self.0
+            .run_mobile_plugin("whatsappWebProbe", ())
+            .map_err(Into::into)
+    }
+
     /// Reports whether Shizuku is installed and whether its privileged server is
     /// running. Never requires Shizuku to be present.
     pub fn shizuku_status(&self) -> crate::Result<ShizukuStatus> {

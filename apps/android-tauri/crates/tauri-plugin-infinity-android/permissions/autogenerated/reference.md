@@ -6,6 +6,7 @@ Enables counting contacts and probing Shizuku.
 
 - `allow-count-contacts`
 - `allow-shizuku-status`
+- `allow-whatsapp-web-probe`
 
 ## Permission Table
 
@@ -64,6 +65,32 @@ Enables the shizuku_status command without any pre-configured scope.
 <td>
 
 Denies the shizuku_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:allow-whatsapp-web-probe`
+
+</td>
+<td>
+
+Enables the whatsapp_web_probe command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`infinity-android:deny-whatsapp-web-probe`
+
+</td>
+<td>
+
+Denies the whatsapp_web_probe command without any pre-configured scope.
 
 </td>
 </tr>

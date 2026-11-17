@@ -156,6 +156,14 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Rejected as default:** `wasmtime` — the official minimal C API build is 2.1 MB, the Rust crate is larger, and its JIT pages were not validated on this device. `wasmi` is an interpreter: no executable memory, deterministic, and its fuel metering matches the slice model.
 - **Consequences:** (1) tools must be distributed as `.wasm`, so tools that need a real OS (git, package managers, preview servers) fall back to option A or to the optional edge; (2) executables shipped via option A still need `patchelf --set-rpath '$ORIGIN'` plus their shared libraries, which is documented in `apps/android-tauri/README.md`; (3) `SandboxExecutor` is the seam that keeps this choice out of the core.
 
+## D24 — WhatsApp Web is shown, never automated ✅
+- **Question:** the blueprint promised "WhatsApp control" through an embedded WebView with JS injection. Does that work, and should the fork build it?
+- **Verified on device (2026-11-17):** an overlay `WebView` with a desktop user agent loads `https://web.whatsapp.com` to `readyState: complete`, with `canvasCount: 1` (the QR), plus `serviceWorker`, `indexedDB` and `subtleCrypto` all present, and no UA redirect. `screencap` shows the genuine login screen. So the *mechanism* is sound.
+- **Not verified, and deliberately so:** a paired session. Linking requires a human to scan the QR with the phone, and nothing after that was built.
+- **Legal constraint (primary sources):** WhatsApp's Help Center article "About temporarily banned accounts" names "an unofficial version of WhatsApp" and "scraping" as ban triggers, and the Messaging Guidelines prohibit "use of unofficial clients … or automation". The consequence lands on the user's own number, not the developer's.
+- **Decision:** the fork may display WhatsApp Web as a read-only view; it ships no DOM injection, scraping or message automation. The probe is opt-in through a `whatsapp-probe` marker file so the overlay never appears during normal runs.
+- **Rejected:** shipping a scraper or auto-responder (ToS violation with account-ban risk); an unofficial API (same violation, and it still needs a QR-paired session); WhatsApp Cloud API (the supported path, but it requires a business account and Meta-hosted infrastructure — incompatible with a cloud-optional local app).
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

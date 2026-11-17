@@ -21,6 +21,12 @@ impl InfinityAndroid {
         ))
     }
 
+    pub fn whatsapp_web_probe(&self) -> crate::Result<WhatsAppProbe> {
+        Err(crate::Error::Unsupported(
+            "the WhatsApp Web probe needs an Android WebView".to_string(),
+        ))
+    }
+
     pub fn shizuku_status(&self) -> crate::Result<ShizukuStatus> {
         Err(crate::Error::Unsupported(
             "Shizuku is only meaningful on Android".to_string(),

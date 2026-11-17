@@ -1,3 +1,7 @@
 [default]
 description = "Enables counting contacts and probing Shizuku."
-permissions = ["allow-count-contacts", "allow-shizuku-status"]
+permissions = [
+  "allow-count-contacts",
+  "allow-shizuku-status",
+  "allow-whatsapp-web-probe",
+]

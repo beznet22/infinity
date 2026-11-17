@@ -38,7 +38,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("infinity-android")
         .invoke_handler(tauri::generate_handler![
             commands::count_contacts,
-            commands::shizuku_status
+            commands::shizuku_status,
+            commands::whatsapp_web_probe
         ])
         .setup(|app, api| {
             #[cfg(mobile)]

@@ -284,6 +284,22 @@ pub fn run() {
                         dir.join("native.json"),
                         serde_json::to_string_pretty(&payload).unwrap_or_default(),
                     );
+
+                    // Opt-in: loading web.whatsapp.com puts a full-screen WebView
+                    // over the UI, so it only runs when this marker exists.
+                    if dir.join("whatsapp-probe").exists() {
+                        let probe = handle.infinity_android().whatsapp_web_probe();
+                        let payload = match probe {
+                            Ok(probe) => {
+                                serde_json::to_value(probe).unwrap_or(serde_json::Value::Null)
+                            }
+                            Err(error) => serde_json::json!({ "error": error.to_string() }),
+                        };
+                        let _ = std::fs::write(
+                            dir.join("whatsapp.json"),
+                            serde_json::to_string_pretty(&payload).unwrap_or_default(),
+                        );
+                    }
                 });
             }
 

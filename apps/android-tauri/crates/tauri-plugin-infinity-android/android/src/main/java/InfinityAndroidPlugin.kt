@@ -6,6 +6,9 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.ContactsContract
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.core.content.ContextCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -15,9 +18,16 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import org.json.JSONObject
+import org.json.JSONTokener
 
 /** Shizuku's provider authority; also its package name. */
 private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+
+/** web.whatsapp.com gates WebView user agents; a desktop UA gets the real client. */
+private const val DESKTOP_USER_AGENT =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/120.0.0.0 Safari/537.36"
 
 /** No arguments: both commands are parameterless probes. */
 @InvokeArg
@@ -62,6 +72,82 @@ class InfinityAndroidPlugin(private val activity: Activity) : Plugin(activity) {
         result.put("running", isShizukuRunning())
         result.put("sdkInt", Build.VERSION.SDK_INT)
         invoke.resolve(result)
+    }
+
+    /**
+     * Loads web.whatsapp.com in an overlay WebView and reports what the client
+     * actually needs (canvas QR, service worker, IndexedDB, WebCrypto).
+     *
+     * Prototype only: pairing needs a human to scan the QR with the phone, so
+     * this can verify that the client boots, never that a session works. Using
+     * an unofficial client or automating it violates WhatsApp's terms and can
+     * get the account banned, so nothing here sends messages.
+     */
+    @Command
+    fun whatsappWebProbe(invoke: Invoke) {
+        activity.runOnUiThread {
+            try {
+                val webView = WebView(activity)
+                webView.settings.javaScriptEnabled = true
+                webView.settings.domStorageEnabled = true
+                webView.settings.databaseEnabled = true
+                webView.settings.userAgentString = DESKTOP_USER_AGENT
+                webView.settings.mediaPlaybackRequiresUserGesture = false
+                webView.webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        view?.postDelayed({ reportWhatsAppState(view, invoke) }, 4_000)
+                    }
+                }
+                val root = activity.findViewById<ViewGroup>(android.R.id.content)
+                root.addView(
+                    webView,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
+                webView.loadUrl("https://web.whatsapp.com")
+            } catch (error: Exception) {
+                invoke.reject("whatsapp probe failed: ${error.message}")
+            }
+        }
+    }
+
+    private fun reportWhatsAppState(view: WebView, invoke: Invoke) {
+        val script = """
+            (function () {
+              try {
+                var canvas = document.querySelectorAll('canvas');
+                return JSON.stringify({
+                  url: location.href,
+                  title: document.title,
+                  readyState: document.readyState,
+                  qrCanvas: canvas.length > 0,
+                  canvasCount: canvas.length,
+                  serviceWorker: !!navigator.serviceWorker,
+                  indexedDb: !!window.indexedDB,
+                  subtleCrypto: !!(window.crypto && window.crypto.subtle),
+                  bodySnippet: (document.body ? document.body.innerText : '').slice(0, 300)
+                });
+              } catch (e) {
+                return JSON.stringify({ error: String(e) });
+              }
+            })()
+        """.trimIndent()
+
+        view.evaluateJavascript(script) { raw ->
+            try {
+                val decoded = JSONTokener(raw).nextValue() as? String ?: "{}"
+                val parsed = JSONObject(decoded)
+                val result = JSObject()
+                for (key in parsed.keys()) {
+                    result.put(key, parsed.get(key))
+                }
+                invoke.resolve(result)
+            } catch (error: Exception) {
+                invoke.reject("could not read the whatsapp page state: ${error.message}")
+            }
+        }
     }
 
     private fun hasContactsPermission(): Boolean =
