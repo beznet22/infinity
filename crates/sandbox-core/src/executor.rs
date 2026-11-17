@@ -170,8 +170,16 @@ impl SandboxExecutor for ProcessSandboxExecutor {
             ));
         };
 
+        // The sandbox root (and an explicit `cwd`) may not exist yet — for
+        // example a fresh temp dir on a device. Create it first: spawning with
+        // a missing working directory fails with ENOENT before the command runs.
+        tokio::fs::create_dir_all(&self.root).await?;
         let cwd = match &request.cwd {
-            Some(dir) => self.resolve(dir)?,
+            Some(dir) => {
+                let dir = self.resolve(dir)?;
+                tokio::fs::create_dir_all(&dir).await?;
+                dir
+            }
             None => self.root.clone(),
         };
 
@@ -318,5 +326,22 @@ mod tests {
 
         let escape = executor.read_file("../outside.txt").await;
         assert!(escape.is_err(), "paths must not escape the sandbox root");
+    }
+
+    #[cfg(feature = "native")]
+    #[tokio::test]
+    async fn process_executor_creates_a_missing_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // A root that does not exist yet, mirroring a fresh device temp dir.
+        let root = dir.path().join("not-created-yet");
+        let executor = ProcessSandboxExecutor::new(&root);
+
+        let output = executor
+            .run(ExecRequest::new(["echo", "hello"]))
+            .await
+            .expect("run in a missing root");
+        assert!(output.success());
+        assert_eq!(output.stdout_text().trim(), "hello");
+        assert!(root.is_dir(), "the executor must create its root");
     }
 }

@@ -84,7 +84,9 @@ pub fn run() {
     tauri::Builder::default()
         // Run the probe once at startup and persist the result inside the app's
         // data dir. On a device this is readable without a UI round-trip:
-        //   adb shell run-as run.hydro.infinityhybrid cat files/probe.json
+        //   adb shell run-as run.hydro.infinityhybrid cat probe.json
+        // (verified on a real device: `app_data_dir()` resolves to the app's
+        // data root, so the file is `probe.json`, not `files/probe.json`.)
         .setup(|app| {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

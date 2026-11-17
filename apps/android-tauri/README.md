@@ -11,8 +11,45 @@ A **consumer-side** reference app (not a workspace member — see decision D16).
 The app also runs the probe once at startup and writes the result to its data dir, so a device run can be verified without touching the UI:
 
 ```bash
-adb shell run-as run.hydro.infinityhybrid cat files/probe.json
+adb shell run-as run.hydro.infinityhybrid cat probe.json
 ```
+
+## Verified
+
+On a real device (Android 13, arm64-v8a), installed and launched headlessly:
+
+```json
+{ "app_version": "0.1.0", "target": "aarch64", "sandbox_status": 0,
+  "sandbox_stdout": "infinity-on-android" }
+```
+
+The device run also caught a real bug: `ProcessSandboxExecutor` spawned with a
+cwd that did not exist yet (`ENOENT`). The executor now creates its root (and an
+explicit `cwd`) before spawning, with a regression test.
+
+## Headless debugging (no clicking)
+
+```bash
+S=<serial>
+adb -s $S shell am start -n run.hydro.infinityhybrid/.MainActivity
+adb -s $S logcat --pid=$(adb -s $S shell pidof -s run.hydro.infinityhybrid)
+adb -s $S exec-out screencap -p > shot.png
+adb -s $S exec-out uiautomator dump /dev/tty       # parse bounds for input tap
+```
+
+Debug builds enable WebView remote debugging (wry compiles
+`setWebContentsDebuggingEnabled` under `debug_assertions`), so JS can be driven
+over CDP without touching the screen:
+
+```bash
+pid=$(adb -s $S shell pidof -s run.hydro.infinityhybrid)
+adb -s $S forward tcp:9301 localabstract:webview_devtools_remote_$pid
+curl -s localhost:9301/json/list                  # targets + webSocketDebuggerUrl
+```
+
+Multiple apps coexist on one device as long as their `applicationId`s differ
+(ours is `run.hydro.infinityhybrid`); only host-side `adb forward` ports can
+collide, so pick a free one (9301 here).
 
 ## Build
 

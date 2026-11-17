@@ -37,7 +37,7 @@ Chunk IDs below are authoritative from `implementation-plan.md`. All work is ⬜
 |---|---|---|---|
 | 0 | 0.1–0.8 | WASM readiness (W1–W10 + CI gate) | ✅ complete — 7/7 green |
 | 1 | 1.1–1.5 | Core adapter traits + `HostCtx` (D20) | ✅ complete — 1.2/1.3 deferred (D19) |
-| 2 | 2.1–2.4 | Consumer archetype: Android Tauri app | ⬜ |
+| 2 | 2.1–2.4 | Consumer archetype: Android Tauri app | 🔶 2.1–2.2 done (verified on device); 2.3–2.4 pending |
 | 3 | 3.1–3.4 | Browser runtime (`crates/infinity-wasm`) | ⬜ |
 | 4 | 4.1–4.3 | `infinity-remote-adapters` + worker archetype + optional relay (D21) | ⬜ |
 
@@ -149,3 +149,6 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | 2026-11-17 | 1.5 | No implementation work needed — `HttpMcpTransport` already does Streamable HTTP + SSE. Added a test with a fake loopback server covering SSE parsing and `mcp-session-id` capture. |
 | 2026-11-17 | 1.2/1.3 | **Deferred to Phase 3/4** (D19): the flows already exist as `AgentSystem::step` / `SessionManager`; extracting traits now would guess the shape and refactor untestable AWS/daemon code. |
 | 2026-11-17 | 1.4 | New fork-only crate `infinity-host` (D20) exposing `HostCtx<C,S,H,T,E>` + optional MCP factory; default-on `native` feature forwards to `sandbox-core`/`infinity-mcp-bridge`. Gate now covers 8 crates. Tests: capability access, optional MCP, `into_parts`. |
+| 2026-11-17 | 2.1 | `apps/android-tauri` scaffolded (excluded from the workspace, D16), Tauri CLI 2.12.5 via pnpm, `android init`, then release + signed debug APKs built for x86_64 and aarch64. Build findings recorded in the archetype README: `frontendDist` is relative to the config, `bundle.targets` must be `"all"` (`--apk` selects the APK), icons must be **RGBA**, and `JAVA_HOME` must point at a real JDK. |
+| 2026-11-17 | 2.2 | Verified on a real device (Android 13, arm64-v8a) **headlessly**: `adb install` → `am start` → `run-as cat probe.json` returned `{"target":"aarch64","sandbox_status":0,"sandbox_stdout":"infinity-on-android"}`. The run found a real bug — `ProcessSandboxExecutor` spawned with a nonexistent cwd (`ENOENT`); fixed by creating the root/cwd before spawning, with a regression test. |
+| 2026-11-17 | env | Emulator could not boot under host memory pressure (587 MB free, swap exhausted); Gradle + Kotlin daemons were stopped to recover ~15 GB. The KVM device was present but the user lacked group access (fixed with an ACL); the device run used the physical phone instead. |

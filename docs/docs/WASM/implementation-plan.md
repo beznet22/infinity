@@ -131,11 +131,17 @@ Chunk-by-chunk implementation spec for the fork described in [`overview.md`](./o
 
 **Goal.** A reference consuming app (`apps/android-tauri`; standalone project referencing the fork crates by git/path) proving the crate APIs end-to-end on Android, including long-running operation with **no cloud** (D17).
 
-### 2.1 Scaffold + host wiring
+### 2.1 Scaffold + host wiring *(implemented)*
+
+*As implemented:* `apps/android-tauri` (excluded from the workspace, own `[workspace]`), Tauri CLI via pnpm, `android init`, and APKs built for `x86_64` and `aarch64`. Verified build pitfalls are documented in the archetype README (`frontendDist` relative to the config; `bundle.targets = "all"`; RGBA icons; valid `JAVA_HOME`; NDK `CC`/`AR`/linker env). FGS is **not** wired yet — the base app builds and runs first.
+
 - `tauri init` + `tauri android init`; `tauri-plugin-background-service` (foreground service, `START_STICKY`); `reqwest` switched to rustls features (D11); `INTERNET` permission; assemble `HostCtx` natively (JSON-file stores in the app data dir → `memory_store.rs` pattern; tokio current-thread in the service loop; file-based `ThreadConfigSource`).
 - **Accept:** `tauri android build` succeeds; runtime boots inside the foreground service.
 
-### 2.2 End-to-end agent on device
+### 2.2 End-to-end agent on device *(partially implemented)*
+
+*As implemented:* the app assembles `HostCtx` on device and runs a real sandbox command, verified headlessly on an Android 13 phone (`probe.json` → `sandbox_status: 0`, `sandbox_stdout: "infinity-on-android"`). **Not yet done:** a model-backed conversation (needs a provider key, chunk 2.2b) and foreground-service survival testing.
+
 - Webview prompt → slice → provider stream over rustls (rig: OpenAI/Anthropic/Gemini) → `ThreadObserver` events → Tauri events; app binds the loopback RAP callback server for hibernating async tools.
 - **Accept:** full conversation on device; survives backgrounding (FGS) and process kill (store persistence + sticky restart).
 
