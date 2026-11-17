@@ -46,6 +46,7 @@ struct Args {
     interval: u64,
     iterations: u64,
     store: String,
+    relay_token: Option<String>,
     assistant: bool,
 }
 
@@ -118,6 +119,7 @@ fn parse() -> Result<Args, String> {
     let mut interval = 5u64;
     let mut iterations = 0u64;
     let mut store_kind = "sqlite".to_owned();
+    let mut relay_token = None;
     let mut assistant = false;
 
     let mut args = std::env::args().skip(1);
@@ -171,6 +173,7 @@ fn parse() -> Result<Args, String> {
                     .map_err(|_| "--iterations must be a number".to_owned())?
             }
             "--store" => store_kind = take("--store")?,
+            "--relay-token" => relay_token = Some(take("--relay-token")?),
             "--assistant" => assistant = true,
             other if command.is_none() => command = Some(other.to_owned()),
             other => return Err(format!("unexpected argument {other}")),
@@ -192,6 +195,7 @@ fn parse() -> Result<Args, String> {
         interval,
         iterations,
         store: store_kind,
+        relay_token,
         assistant,
     })
 }
@@ -207,7 +211,13 @@ async fn main() -> Result<(), String> {
         other => return Err(format!("unknown --store {other} (use sqlite or jsonl)")),
     };
     let transport = match &args.relay {
-        Some(url) => Some(HttpTransport::new(url.clone()).map_err(|e| e.to_string())?),
+        Some(url) => {
+            let transport = HttpTransport::new(url.clone()).map_err(|e| e.to_string())?;
+            Some(match &args.relay_token {
+                Some(token) => transport.with_token(token.clone()),
+                None => transport,
+            })
+        }
         None => None,
     };
 

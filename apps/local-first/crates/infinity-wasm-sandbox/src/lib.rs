@@ -36,7 +36,10 @@ impl std::fmt::Display for SandboxError {
         match self {
             Self::Compile(error) => write!(formatter, "compile: {error}"),
             Self::Imports { module, name } => {
-                write!(formatter, "denied: imports {module}.{name}, the sandbox has none")
+                write!(
+                    formatter,
+                    "denied: imports {module}.{name}, the sandbox has none"
+                )
             }
             Self::Trap(error) => write!(formatter, "trap: {error}"),
             Self::NoEntryPoint => write!(formatter, "no exported `run` function returning i32"),
@@ -60,7 +63,8 @@ pub fn run(bytes: &[u8]) -> Result<i32, SandboxError> {
     let mut config = Config::default();
     config.consume_fuel(true);
     let engine = Engine::new(&config);
-    let module = Module::new(&engine, bytes).map_err(|error| SandboxError::Compile(error.to_string()))?;
+    let module =
+        Module::new(&engine, bytes).map_err(|error| SandboxError::Compile(error.to_string()))?;
 
     if let Some(import) = module.imports().next() {
         return Err(SandboxError::Imports {

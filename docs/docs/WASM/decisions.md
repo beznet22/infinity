@@ -461,6 +461,14 @@ Asked explicitly; the honest state:
 - **Why not wasmi:** the browser engine is already a Wasm runtime (D29). Embedding a second interpreter would add weight without adding isolation that the Worker boundary does not already provide.
 - **Limit:** this is an executor, not a registry; tools are fetched by URL in the harness, and the app does not call it yet. Persistence and wake are separate steps (#121).
 
+## D57 — Fencing is atomic, and the relay is no longer open ✅
+- **Atomic fence:** the old read-then-write allowed two racing pushes to both pass. The insert is now one conditional statement — `INSERT … SELECT … WHERE ?fence >= COALESCE(current_fence, 0)` — and an `AFTER INSERT` trigger advances `sessions.current_fence` inside the same statement's transaction. D1 serialises single statements, so the check and the write cannot be separated.
+- **Race test:** a claim at fence 2, then 40 concurrent pushes at fence 1 → 0 accepted, 40 rejected, and no stale row sits after the claim's position. `INVARIANT: PASS`.
+- **Verdict reporting:** `meta.changes` counts the trigger's upsert too, which made one claim report `accepted: 2`. Acceptance is now decided by whether the event row exists afterwards.
+- **Auth:** `RELAY_TOKEN` is required for `/v1/*`; unset means **503** (refuse to serve), wrong token **401**, correct token **200**. `/health` stays open. Local runs use a git-ignored `.dev.vars`; deployment uses `wrangler secret put`. The client gained `HttpTransport::with_token` and the CLI `--relay-token`.
+- **Verified:** `no token → 401`, `wrong → 401`, `correct → 200 ["race","race2"]`; CLI push `→ 401` then `{"accepted":1}` with the token.
+- **Still missing before a public deployment:** per-user namespacing (one token protects the whole relay) and rate limits. Deploying is an external action and needs explicit approval.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.

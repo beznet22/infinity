@@ -8,6 +8,8 @@
 
 interface Env {
   DB: D1Database;
+  /** Required for /v1/* when set; configured as a secret, never committed. */
+  RELAY_TOKEN?: string;
 }
 
 interface SyncEvent {
@@ -47,6 +49,20 @@ export default {
       return json({ ok: true });
     }
 
+    // Without a token the relay is an open write endpoint, which is why the last
+    // deployment was deleted (D34). When RELAY_TOKEN is set, every sync call must
+    // carry it; when it is absent the relay refuses to serve sync at all.
+    if (url.pathname.startsWith("/v1/")) {
+      const expected = env.RELAY_TOKEN;
+      if (!expected) {
+        return json({ error: "relay token is not configured" }, 503);
+      }
+      const provided = request.headers.get("authorization") ?? "";
+      if (provided !== `Bearer ${expected}`) {
+        return json({ error: "unauthorized" }, 401);
+      }
+    }
+
     if (url.pathname === "/v1/sync/push" && request.method === "POST") {
       const body = (await request.json()) as { events?: SyncEvent[] };
       const events = body.events ?? [];
@@ -60,25 +76,15 @@ export default {
       for (const event of events) {
         const fence = Number(event.fence ?? 0);
 
-        // Fencing: once a session has a newer holder, events stamped with an
-        // older token are dropped. Expiry alone leaves a window where a stalled
-        // writer and the new holder both believe they may write.
-        const row = await env.DB.prepare(
-          `SELECT current_fence FROM sessions WHERE session_id = ?`,
-        )
-          .bind(event.session_id)
-          .first<{ current_fence: number }>();
-        const currentFence = Number(row?.current_fence ?? 0);
-        if (fence < currentFence) {
-          stale += 1;
-          continue;
-        }
-
-        // Idempotent by (session_id, event_id): a retried push is a no-op.
+        // One statement does the check and the write. D1 serialises writes, and
+        // the trigger advances `sessions.current_fence` inside the same
+        // transaction, so a lower fence cannot slip in between a read and a write.
         const result = await env.DB.prepare(
           `INSERT INTO events
              (session_id, event_id, seq, device_id, kind, payload, created_at_ms, fence)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
+            WHERE ?8 >= COALESCE(
+                    (SELECT current_fence FROM sessions WHERE session_id = ?1), 0)
            ON CONFLICT (session_id, event_id) DO NOTHING`,
         )
           .bind(
@@ -92,16 +98,19 @@ export default {
             fence,
           )
           .run();
-        accepted += result.meta.changes ?? 0;
-        lastSeq = Math.max(lastSeq, event.seq);
-
-        if (fence > currentFence) {
-          await env.DB.prepare(
-            `INSERT INTO sessions (session_id, current_fence) VALUES (?, ?)
-             ON CONFLICT (session_id) DO UPDATE SET current_fence = excluded.current_fence`,
-          )
-            .bind(event.session_id, fence)
-            .run();
+        // The trigger's session upsert also counts in `meta.changes`, so the
+        // verdict comes from the row itself: present means accepted (a retry is
+        // harmless), absent means the fence check refused it.
+        const stored = await env.DB.prepare(
+          `SELECT 1 FROM events WHERE session_id = ?1 AND event_id = ?2`,
+        )
+          .bind(event.session_id, event.event_id)
+          .first();
+        if (stored) {
+          accepted += 1;
+          lastSeq = Math.max(lastSeq, event.seq);
+        } else {
+          stale += 1;
         }
       }
 

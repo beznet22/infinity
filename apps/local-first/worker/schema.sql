@@ -19,5 +19,16 @@ CREATE TABLE IF NOT EXISTS sessions (
   current_fence INTEGER NOT NULL DEFAULT 0
 );
 
+-- The fence advances in the same transaction as the insert that carried it, so
+-- two racing pushes cannot both be accepted on the strength of a stale read.
+CREATE TRIGGER IF NOT EXISTS events_advance_fence
+AFTER INSERT ON events
+BEGIN
+  INSERT INTO sessions (session_id, current_fence)
+  VALUES (NEW.session_id, NEW.fence)
+  ON CONFLICT (session_id)
+  DO UPDATE SET current_fence = MAX(current_fence, excluded.current_fence);
+END;
+
 CREATE INDEX IF NOT EXISTS idx_events_session_position
   ON events (session_id, position);

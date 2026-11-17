@@ -21,11 +21,18 @@ pub struct PushAck {
 /// Client for the relay's push/pull API.
 #[derive(Debug, Clone)]
 pub struct HttpTransport {
+    token: Option<String>,
     base_url: String,
     client: reqwest::Client,
 }
 
 impl HttpTransport {
+    /// Send a bearer token on every call; the relay requires one when configured.
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        self.token = Some(token.into());
+        self
+    }
+
     pub fn new(base_url: impl Into<String>) -> Result<Self, SyncError> {
         let client = reqwest::Client::builder()
             .build()
@@ -33,6 +40,7 @@ impl HttpTransport {
         Ok(Self {
             base_url: base_url.into().trim_end_matches('/').to_owned(),
             client,
+            token: None,
         })
     }
 
@@ -46,6 +54,15 @@ impl HttpTransport {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_owned(),
             client,
+            token: None,
+        }
+    }
+
+    /// Attach the relay token when one is configured.
+    fn authorized(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        match &self.token {
+            Some(token) => request.bearer_auth(token),
+            None => request,
         }
     }
 
@@ -55,8 +72,7 @@ impl HttpTransport {
             return Ok(PushAck::default());
         }
         let response = self
-            .client
-            .post(format!("{}/v1/sync/push", self.base_url))
+            .authorized(self.client.post(format!("{}/v1/sync/push", self.base_url)))
             .json(&PushRequest { events })
             .send()
             .await
@@ -80,8 +96,7 @@ impl HttpTransport {
         after_position: i64,
     ) -> Result<Vec<StoredEvent>, SyncError> {
         let response = self
-            .client
-            .get(format!("{}/v1/sync/pull", self.base_url))
+            .authorized(self.client.get(format!("{}/v1/sync/pull", self.base_url)))
             .query(&[
                 ("session", session.as_str()),
                 ("after", &after_position.to_string()),
@@ -104,8 +119,10 @@ impl HttpTransport {
     /// Every session the relay knows about.
     pub async fn sessions(&self) -> Result<Vec<SessionId>, SyncError> {
         let response = self
-            .client
-            .get(format!("{}/v1/sync/sessions", self.base_url))
+            .authorized(
+                self.client
+                    .get(format!("{}/v1/sync/sessions", self.base_url)),
+            )
             .send()
             .await
             .map_err(SyncError::Transport)?;
