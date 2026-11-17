@@ -35,6 +35,7 @@ CRATES=(
     sandbox-core
     infinity-mcp-bridge
     infinity-host
+    infinity-wasm
 )
 
 # Crates still expected to FAIL. Remove entries as Phase 0 chunks land; the gate

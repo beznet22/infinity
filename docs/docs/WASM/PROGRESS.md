@@ -31,14 +31,14 @@ Docs: [`overview.md`](./overview.md) blueprint · [`audit.md`](./audit.md) claim
 
 ## 2. Implementation Phases — index
 
-Chunk IDs below are authoritative from `implementation-plan.md`. All work is ⬜ pending.
+Chunk IDs below are authoritative from `implementation-plan.md`; where reality diverged the row says so.
 
 | Phase | Chunks | Scope | Status |
 |---|---|---|---|
-| 0 | 0.1–0.8 | WASM readiness (W1–W10 + CI gate) | ✅ complete — 7/7 green |
+| 0 | 0.1–0.8 | WASM readiness (W1–W10 + CI gate) | ✅ complete — gate now covers 9 crates (7 at exit) |
 | 1 | 1.1–1.5 | Core adapter traits + `HostCtx` (D20) | ✅ complete — 1.2/1.3 deferred (D19) |
-| 2 | 2.1–2.4 | Consumer archetype: Android Tauri app | 🔶 2.1–2.2 done (verified on device); 2.3–2.4 pending |
-| 3 | 3.1–3.4 | Browser runtime (`crates/infinity-wasm`) | ⬜ |
+| 2 | 2.1–2.5 | Consumer archetype: Android Tauri app | ✅ complete — device-verified (2.1–2.3, 2.2b, 2.4–2.5) |
+| 3 | 3.1–3.4 | Browser runtime (`crates/infinity-wasm`) | 🔶 3.1 + timer landed; 3.2–3.4 pending |
 | 4 | 4.1–4.3 | `infinity-remote-adapters` + worker archetype + optional relay (D21) | ⬜ |
 
 Promoted decisions (recorded in the plan, echoed into `decisions.md` when each chunk starts): **D18 `SliceTimer`** (chunk 0.5) · **D20 `HostCtx`** (chunk 1.4) · **D21 optional edge relay** (chunk 4.3).
@@ -49,7 +49,7 @@ Promoted decisions (recorded in the plan, echoed into `decisions.md` when each c
 
 Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the `check.bash` wasm step in place.
 
-**Baseline before this work: 1 green / 6 red. Current: 7 green / 0 red — Phase 0 complete.**
+**Baseline before this work: 1 green / 6 red. Phase 0 exit: 7 green / 0 red. The gate now lists 9 crates (`infinity-host`, `infinity-wasm` added later).**
 
 | # | Work item | Chunk | Files | Status |
 |---|---|---|---|---|
@@ -61,11 +61,11 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | W5+W6 | `SliceTimer` (**D18**), direct `std::fs` removal, gating `system/local/` | 0.5 → **Phase 3** | `infinity-agent-core` | ⏭ deferred — none of these block compilation (`tokio::time` and `std::fs` compile and fail only at runtime; `system/local` has no process/net/thread usage) |
 | W7 | Sandbox trait/impl split — default-on `native` feature gating `server`/`git`/`jj` + `SpawnedCommand`/`spawn_command` and their 8 native-only deps; gate runs the crate with `--no-default-features` | 0.6 | `sandbox-core/{Cargo.toml,src/lib.rs,src/sandbox.rs}`, `scripts/check-wasm.bash` | ✅ |
 | W8 | Gate the stdio transport behind the default-on `native` feature; cfg-gate `McpTransport` + `McpTransportFactory` (native `Send` / wasm none); `spawn_local` for tool-result delivery in the browser | 0.7 | `infinity-mcp-bridge/{Cargo.toml,src/lib.rs}`, `scripts/check-wasm.bash` | ✅ |
-| — | Sweep + record + exit | 0.8 | all 7 crates | ⬜ |
+| — | Sweep + record + exit | 0.8 | all 7 crates | ✅ — wasm gate, native workspace, 141 tests, clippy and fmt all clean |
 
 ---
 
-## 4. Phase 1 — Core Adapter Traits ⬜
+## 4. Phase 1 — Core Adapter Traits ✅ COMPLETE
 
 | Chunk | Deliverable | Status |
 |---|---|---|
@@ -77,25 +77,40 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 
 ---
 
-## 5. Phase 2 — Consumer Archetype: Android Tauri App ⬜
+## 5. Phase 2 — Consumer Archetype: Android Tauri App ✅ COMPLETE
+
+Every row was verified on a real device (Android 13, arm64-v8a), headlessly, with
+no UI interaction — `adb` plus probe files in the app's data dir.
 
 | Chunk | Deliverable | Status |
 |---|---|---|
-| 2.1 | Scaffold + FGS + rustls + native `HostCtx` assembly | ⬜ |
-| 2.2 | End-to-end agent on device (survives background/kill) | ⬜ |
-| 2.3 | Kotlin plugins (notifications, contacts, Shizuku — D12 checks) | ⬜ |
-| 2.4 | WhatsApp WebView prototype — **allowed to fail**, outcome recorded | ⬜ |
+| 2.1 | Scaffold (excluded from the workspace, D16) + Tauri CLI + signed debug APKs | ✅ — APKs for x86_64 and aarch64; build gotchas recorded in the archetype README |
+| 2.2 | End-to-end agent on device: `HostCtx` + `ProcessSandboxExecutor` | ✅ — `probe.json`; the run found and fixed a real `ENOENT` (missing cwd) |
+| 2.2b | Real model turn over HTTPS (Kimchi, `gemma-4-31b`) | ✅ — `chat.json`; found and fixed a silent TLS hang (D21) |
+| 2.3 | Kotlin plugin: contacts + Shizuku probe; notifications via the official plugin | ✅ — 1064 contacts, notification in `dumpsys`, Shizuku absent (compile-only) |
+| 2.4 | WhatsApp WebView prototype — **allowed to fail** | ✅ technically — client boots, QR renders, live in a hidden view (D24) |
+| 2.5 | WhatsApp automation: pairing by phone number, state/read/send (dry-run default) | ✅ implemented + partially verified — session persists, 21 chat rows, 23 messages read over CDP; in-app read retry and first send still open (D25/D26) |
+
+**Phase 2 exit evidence:** sandbox probe, model turn, contacts/notification/Shizuku probes, WhatsApp view + pairing. Failures worth keeping: a silent TLS stall, a missing sandbox cwd, and my own rebuild-during-linking mistake (D26).
 
 ---
 
-## 6. Phase 3 — Browser Runtime (`crates/infinity-wasm`) ⬜
+## 6. Phase 3 — Browser Runtime (`crates/infinity-wasm`) 🔶 IN PROGRESS
+
+Sequence was re-ordered after the timer research: the timer and storage come
+first because nothing else can run on the web target without them.
 
 | Chunk | Deliverable | Status |
 |---|---|---|
-| 3.1 | Crate scaffold + wasm `HostCtx` (fetch HTTP, IndexedDB, OPFS, wasmtimer) | ⬜ |
-| 3.2 | wasmsh + OPFS sandbox in a Worker (conch fallback; Pyodide check) | ⬜ |
-| 3.3 | SharedWorker coordinator + BroadcastChannel fan-out + in-page `CallbackIngest` | ⬜ |
-| 3.4 | trunk dev loop + chrome-devtools-mcp + `twiggy` size budget | ⬜ |
+| 3.1 | Crate scaffold, workspace member, gate entry | ✅ — `crates/infinity-wasm`; wasm gate now covers 9 crates |
+| 3.2 | `SliceTimer` over `wasmtimer` 0.4 (boxed future, no `async_trait`) | ✅ — 4 tests pass natively; wasm build green |
+| 3.3 | IndexedDB `ConversationStore` / `StateStore` (`idb` 0.6.5) | ⬜ |
+| 3.4 | `wasm-bindgen` JS API + `wasm-pack build` + demo page | ⬜ |
+| 3.5 | Wasm sandbox (`wasmi` 1.0.9) + size budget | ⬜ |
+
+Folded in from the original plan: wasmsh/OPFS/SharedWorker land with 3.5, since a
+sandbox and a coordinator are only meaningful once the runtime can sleep, store
+and be called from JS.
 
 ---
 
@@ -157,3 +172,5 @@ Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the
 | 2026-11-17 | 2.4 | WhatsApp Web prototype **succeeded technically**: an overlay `WebView` with a desktop UA loaded `web.whatsapp.com` to `readyState: complete`, rendered the QR canvas, and reported `serviceWorker`/`indexedDB`/`subtleCrypto`; `screencap` shows the real login screen. Pairing needs a human scan, so no session was created. Recorded as D24 with the ToS constraint: WhatsApp names unofficial clients and automation as ban triggers, so the fork shows the view and ships no automation. The probe is opt-in through a `whatsapp-probe` marker file. |
 | 2026-11-17 | 2.5 | WhatsApp automation (D25/D26). Hidden WebView at full size inserted at index 0, behind Tauri's UI, keeps a real 360 px viewport. Pairing by phone number works; the link survives restarts via IndexedDB. Synthetic `click()` does nothing on chat rows — trusted `MotionEvent` taps do. `whatsapp_state` verified (21 chat rows), message selector verified over CDP (23 messages), send implemented with dry-run default. |
 | 2026-11-17 | process | Two self-inflicted failures recorded so they are not repeated: rebuilding the app mid-link kills the pairing handshake; and a 1.5 s wait after tapping a chat reads an empty panel, so reads retry until messages render. |
+| 2026-11-17 | 3.1 | New fork crate `crates/infinity-wasm` (browser runtime). It builds for the host and for `wasm32-unknown-unknown`, is a workspace member, and the wasm gate now covers it — 9 crates green. Two tests state the browser's actual capabilities (no process sandbox). |
+| 2026-11-17 | 3.2 | `SliceTimer` over `wasmtimer` 0.4.5, as a boxed-future trait (not `async_trait`: the browser's futures are `!Send`, the same constraint as D15). Native builds keep `tokio::time`. 4 tests pass; one initially failed because a tokio sleep future was created outside a runtime. |
