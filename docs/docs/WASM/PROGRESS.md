@@ -104,7 +104,7 @@ first because nothing else can run on the web target without them.
 |---|---|---|
 | 3.1 | Crate scaffold, workspace member, gate entry | ✅ — `crates/infinity-wasm`; wasm gate now covers 9 crates |
 | 3.2 | `SliceTimer` over `wasmtimer` 0.4 (boxed future, no `async_trait`) | ✅ — 4 tests pass natively; wasm build green |
-| 3.3 | IndexedDB `ConversationStore` / `StateStore` (`idb` 0.6.5) | ⬜ |
+| 3.3 | IndexedDB `ConversationStore` / `StateStore` (`idb` 0.6.5) | ⛔ blocked — needs `?Send` propagation through the core's async paths (D27) |
 | 3.4 | `wasm-bindgen` JS API + `wasm-pack build` + demo page | ⬜ |
 | 3.5 | Wasm sandbox (`wasmi` 1.0.9) + size budget | ⬜ |
 
@@ -174,3 +174,4 @@ and be called from JS.
 | 2026-11-17 | process | Two self-inflicted failures recorded so they are not repeated: rebuilding the app mid-link kills the pairing handshake; and a 1.5 s wait after tapping a chat reads an empty panel, so reads retry until messages render. |
 | 2026-11-17 | 3.1 | New fork crate `crates/infinity-wasm` (browser runtime). It builds for the host and for `wasm32-unknown-unknown`, is a workspace member, and the wasm gate now covers it — 9 crates green. Two tests state the browser's actual capabilities (no process sandbox). |
 | 2026-11-17 | 3.2 | `SliceTimer` over `wasmtimer` 0.4.5, as a boxed-future trait (not `async_trait`: the browser's futures are `!Send`, the same constraint as D15). Native builds keep `tokio::time`. 4 tests pass; one initially failed because a tokio sleep future was created outside a runtime. |
+| 2026-11-17 | 3.3 | **Blocked, not built.** Relaxing the store traits' `Send + Sync` bounds is not enough: the core's async functions require `Send` futures, so a `!Send` IndexedDB handle fails at `event_processor.rs:209` and `system/local/router.rs:338`. Reverted; both targets green. The real work is `?Send` propagation on wasm (D27). Library research done: `idb` 0.6.5, `wasmtimer` 0.4.5, `wasmi` 1.0.9; OPFS/SQLite compared and deferred (needs a dedicated worker and 0.5–1 MB of wasm for queries the traits do not use). |

@@ -184,6 +184,15 @@ The research → brainstorm → decide record behind the rewritten `overview.md`
 - **Detection boundary:** no spoofing or evasion is implemented. WhatsApp's guidelines name unofficial clients, scraping and automation as ban triggers; the mitigations here are rate limits, dry-run-by-default (`whatsapp_send` drafts unless told to send), and stopping on warnings. See D24's revision for the risk the user accepted.
 - **Status:** `whatsapp_state` ✅ (chat list, row count); `whatsapp_read` expression ✅ over CDP (23 messages / last 5 returned); the in-app retry path ⏳ unverified; `whatsapp_send` ⏳ implemented, dry-run untested.
 
+## D27 — Browser stores need `?Send` propagation, not just relaxed trait bounds ⏸️
+- **Question:** can an IndexedDB-backed `ConversationStore`/`StateStore` be dropped in by relaxing the traits' `Send + Sync` supertraits on wasm (the D15 pattern)?
+- **Attempted:** introduced `StoreBounds` (`Send + Sync + Clone` natively, `Clone` on wasm) and made both store traits extend it.
+- **Measured result:** the wasm build fails. `event_processor.rs:209` and `system/local/router.rs:338` cannot share `C`/`S` across threads, because the enclosing async functions require `Send` futures; holding `&C` across an `.await` then needs `C: Sync`. Relaxing only the supertraits does not relax the futures.
+- **Why:** `idb`/`wasm-bindgen` handles are `!Send`, and their futures are `!Send` too. A `SendWrapper` around the handle does not help — the `JsFuture` itself is `!Send`.
+- **Conclusion:** the browser store is blocked on making the core's async paths `?Send` on wasm (cfg-gated `async_trait(?Send)` plus `spawn_local` at the four call sites), which is a Phase 3 refactor, not a trait tweak. Reverted the change; both targets are green again.
+- **Options for the refactor:** (a) propagate `?Send` through the core's async fns on wasm; (b) run the browser runtime inside a `LocalSet` and keep `Send` only where genuinely required; (c) `SendWrapper` — rejected, since it cannot fix `!Send` futures.
+- **Ordering:** Phase 4 (Cloudflare worker, `infinity-remote-adapters`) does not depend on browser storage and can proceed first.
+
 ## Revisit triggers 🔁
 - **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
 - **Background Sync:** re-check caniuse if Chromium-only status changes.
