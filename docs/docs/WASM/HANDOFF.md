@@ -9,6 +9,8 @@
 Companion reading:
 
 - [`README.md`](./README.md) — target-dependent compilation rules.
+- [`DEBUGGING.md`](./DEBUGGING.md) — how to observe each platform when a change
+  appears to hang.
 - [`overview.md`](./overview.md) — architectural background.
 - [`decisions.md`](./decisions.md) — D1–D64, evidence and limitations; later entries supersede “next step” remarks in earlier entries.
 - [`implementation-plan.md`](./implementation-plan.md) — original phases, not a current completion report.

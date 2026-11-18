@@ -5,6 +5,7 @@ Documentation for forking Infinity into a hybrid runtime (on-device Android + in
 | Document | Purpose |
 |---|---|
 | [`HANDOFF.md`](./HANDOFF.md) | **Start here for a desktop/web/Android consumer app**: reusable APIs, reference-source map, required integration fixes, target runbooks, security constraints and an acceptance matrix. |
+| [`DEBUGGING.md`](./DEBUGGING.md) | Field guide to the debug loops used here: adb artifacts/logcat, Android WebView CDP, headless-Chrome CDP, storage/DB inspection, local relay probes, and the failure signatures that look like hangs. |
 | [`overview.md`](./overview.md) | The fork blueprint (§1–§10): worktree strategy, core pillars, Android/Tauri architecture, trait adapters, reference repos, layout, build order, WASM toolchain, readiness analysis, design ideas. |
 | [`audit.md`](./audit.md) | Claim-by-claim audit of the original overview (53 rows / 54 verdicts), feature-preservation map, Appendix C (compiler-verified wasm readiness). |
 | [`decisions.md`](./decisions.md) | Decisions D1–D64 with options, evidence, limitations and rejected alternatives; later entries supersede earlier “next step” text. |
