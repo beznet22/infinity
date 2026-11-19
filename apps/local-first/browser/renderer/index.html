@@ -1,0 +1,62 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>renderer fixture</title>
+<style>
+  body { font: 14px system-ui; max-width: 40rem; margin: 2rem auto; }
+  .threads { display: flex; gap: .5rem; list-style: none; padding: 0; }
+  .thread { border: 1px solid #ccc; border-radius: 6px; padding: .25rem .5rem; cursor: pointer; }
+  .thread--active { border-color: #333; font-weight: 600; }
+  .banner { background: #fff3cd; padding: .5rem; border-radius: 4px; }
+  .message { margin: .5rem 0; display: flex; gap: .5rem; align-items: baseline; }
+  .message--assistant .role { color: #555; }
+  .role { font-weight: 600; }
+  .queue { border-top: 1px dashed #ccc; margin-top: 1rem; padding-top: .5rem; }
+  button { cursor: pointer; }
+</style>
+<div id="app"></div>
+<script type="module">
+  import { renderThreads } from "./renderer.js";
+
+  const views = [
+    {
+      session: "chat",
+      device: "phone",
+      read_only: true,
+      holder: "laptop",
+      fence: 2,
+      last_seq: 9,
+      messages: [
+        { event: "e1", role: "user", text: "what changed?", versions: 2, reply_to: null },
+        { event: "e2", role: "assistant", text: "the event log", versions: 1, reply_to: "e1" },
+      ],
+      queue: [{ event: "q1", text: "also check the queue" }],
+      truncations: [{ id: "t1", from: "e3", active: true }],
+    },
+    {
+      session: "notes",
+      device: "phone",
+      read_only: false,
+      holder: null,
+      fence: 0,
+      last_seq: 2,
+      messages: [{ event: "n1", role: "user", text: "plan the week", versions: 1, reply_to: null }],
+      queue: [],
+      truncations: [],
+    },
+  ];
+
+  window.__commands = [];
+  const handlers = {
+    onCommand: (command) => window.__commands.push(command),
+    onSelect: (session) => {
+      window.__commands.push({ type: "select", session });
+      render(session);
+    },
+  };
+  function render(active = "chat") {
+    renderThreads(document.getElementById("app"), { sessions: views, active }, handlers);
+  }
+  render();
+  window.__render = render;
+  document.title = "ready";
+</script>

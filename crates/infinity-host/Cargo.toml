@@ -1,0 +1,28 @@
+[package]
+name = "infinity-host"
+publish = false
+version = "0.2.0"
+description = "Host assembly point for the Infinity hybrid fork: the capabilities a host provides to the agent core."
+edition = "2024"
+repository = { workspace = true }
+license = "Apache-2.0"
+
+[features]
+default = ["native"]
+# Browser builds consume this crate with `default-features = false`; the native
+# surface comes from `sandbox-core` (HTTP server, git/jj, process handles) and
+# `infinity-mcp-bridge` (stdio transport). See docs/docs/WASM/README.md.
+native = ["sandbox-core/native", "infinity-mcp-bridge/native"]
+
+[dependencies]
+infinity-agent-core = { path = "../infinity-agent-core", version = "^0.2.0" }
+rap-client = { path = "../rap-client", version = "^0.2.0" }
+sandbox-core = { path = "../sandbox-core", version = "^0.2.0", default-features = false }
+infinity-mcp-bridge = { path = "../infinity-mcp-bridge", version = "^0.2.0", default-features = false }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

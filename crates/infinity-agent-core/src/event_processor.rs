@@ -1403,6 +1403,22 @@ pub const TOOL_CALL_INTERRUPTED_TEXT: &str = "Tool call interrupted by user";
 /// throttled provider errors).
 const MAX_COMPLETION_RETRIES: u32 = 10;
 /// Backoff before retrying a [`ErrorClass::Throttled`] provider error.
+/// Sleep used by completion retries.
+///
+/// `tokio::time` compiles for `wasm32-unknown-unknown` but panics the first time
+/// it is polled, so a provider error (429, dropped stream) would abort the whole
+/// page. The web target sleeps through `wasmtimer` instead.
+#[cfg(not(target_arch = "wasm32"))]
+async fn retry_delay(duration: Duration) {
+    tokio::time::sleep(duration).await;
+}
+
+/// Browser variant of [`retry_delay`] (no tokio timer driver in a wasm page).
+#[cfg(target_arch = "wasm32")]
+async fn retry_delay(duration: Duration) {
+    wasmtimer::tokio::sleep(duration).await;
+}
+
 const THROTTLED_RETRY_DELAY: Duration = Duration::from_secs(30);
 /// Backoff before retrying a [`ErrorClass::Transient`] request-initiation
 /// error.
@@ -1560,7 +1576,7 @@ where
                                 THROTTLED_RETRY_DELAY.as_secs()
                             ));
                             tokio::select! {
-                                _ = tokio::time::sleep(THROTTLED_RETRY_DELAY) => {}
+                                _ = retry_delay(THROTTLED_RETRY_DELAY) => {}
                                 _ = &mut cancel_rx => {
                                     tracing::info!("Completion cancelled during retry wait");
                                     return;
@@ -1573,7 +1589,7 @@ where
                             tracing::warn!("Stream error ({e}), retrying...");
                             yield CompletionEvent::Info(format!("Stream error ({e}), retrying..."));
                             tokio::select! {
-                                _ = tokio::time::sleep(TRANSIENT_RETRY_DELAY) => {}
+                                _ = retry_delay(TRANSIENT_RETRY_DELAY) => {}
                                 _ = &mut cancel_rx => {
                                     tracing::info!("Completion cancelled during retry wait");
                                     return;
@@ -1650,7 +1666,7 @@ where
                         history.discard_turn();
                         yield CompletionEvent::Info("Stream error (unexpected end), retrying...".to_owned());
                         tracing::warn!("Stream ended unexpectedly, discarding partial turn and retrying...");
-                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retry_delay(Duration::from_secs(1)).await;
                         retry_count += 1;
                         continue 'outer;
                     } else {
@@ -1683,7 +1699,7 @@ where
                                 history.discard_turn();
                                 yield CompletionEvent::Info(format!("Stream error ({e}), retrying..."));
                                 tracing::warn!("Stream error (transient), discarding partial turn and retrying...");
-                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                retry_delay(Duration::from_secs(1)).await;
                                 retry_count += 1;
                                 continue 'outer;
                             }
@@ -1694,7 +1710,7 @@ where
                                     THROTTLED_RETRY_DELAY.as_secs()
                                 ));
                                 tokio::select! {
-                                    _ = tokio::time::sleep(THROTTLED_RETRY_DELAY) => {}
+                                    _ = retry_delay(THROTTLED_RETRY_DELAY) => {}
                                     _ = &mut cancel_rx => {
                                         tracing::info!("Completion cancelled during retry wait");
                                         return;

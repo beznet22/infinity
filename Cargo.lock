@@ -1321,6 +1321,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2608,6 +2618,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
 
 [[package]]
+name = "idb"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6554f394e990a1af530a528a7fdcad6e01b29cb1b990f89df3ffd62cf15f7828"
+dependencies = [
+ "indexmap 2.14.0",
+ "js-sys",
+ "num-traits",
+ "thiserror 2.0.18",
+ "tokio",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2765,6 +2790,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "futures-util",
+ "getrandom 0.3.4",
  "infinity-provider-protocol",
  "insta",
  "libc",
@@ -2778,6 +2804,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "wasmtimer",
 ]
 
 [[package]]
@@ -2851,6 +2878,18 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "infinity-host"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "infinity-agent-core",
+ "infinity-mcp-bridge",
+ "rap-client",
+ "sandbox-core",
+ "tokio",
 ]
 
 [[package]]
@@ -2999,6 +3038,32 @@ dependencies = [
  "stageleft_tool",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "infinity-wasm"
+version = "0.2.0"
+dependencies = [
+ "async-trait",
+ "console_error_panic_hook",
+ "futures-util",
+ "idb",
+ "infinity-agent-core",
+ "infinity-host",
+ "infinity-provider-protocol",
+ "js-sys",
+ "rap-client",
+ "rap-protocol",
+ "reqwest",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasmtimer",
 ]
 
 [[package]]
@@ -4863,6 +4928,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6555,6 +6631,20 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap 2.14.0",
  "semver",
+]
+
+[[package]]
+name = "wasmtimer"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c62b7f338e4397a45d054c15a2b36a93d57cccdda7be11a7d7b045d47b5e70ce"
+dependencies = [
+ "futures",
+ "js-sys",
+ "parking_lot",
+ "pin-project-lite",
+ "slab",
+ "wasm-bindgen",
 ]
 
 [[package]]

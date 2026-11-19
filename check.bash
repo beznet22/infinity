@@ -12,9 +12,21 @@ step() { echo -e "\n${BOLD}▸ $1${RESET}"; }
 
 step 'Prerequisites'
 command -v git > /dev/null 2>&1 || fail 'Cannot find `git`'
-command -v jj > /dev/null 2>&1 || fail 'Cannot find jujutsu `jj`. To install, run `cargo install --locked jj-cli --bin jj`'
-command -v bwrap > /dev/null 2>&1 || command -v sandbox-exec > /dev/null 2>&1 || fail 'Cannot find bubblewrap `bwrap` or `sandbox-exec`'
-pass 'All prerequisite executables found'
+
+# `jj` and a sandboxing tool are only needed by `sandbox-local`'s tests. Treat
+# them as optional so a clean machine (and CI) can still run everything else —
+# the affected tests are excluded below instead of failing the whole run.
+HAS_JJ=1
+if ! command -v jj > /dev/null 2>&1; then
+    HAS_JJ=0
+    echo '  (optional: jujutsu `jj` not found — sandbox-local tests will be skipped; install with `cargo install --locked jj-cli --bin jj`)'
+fi
+HAS_SANDBOX=1
+if ! command -v bwrap > /dev/null 2>&1 && ! command -v sandbox-exec > /dev/null 2>&1; then
+    HAS_SANDBOX=0
+    echo '  (optional: no `bwrap`/`sandbox-exec` — sandboxed process tests will be skipped)'
+fi
+pass 'Required prerequisites found'
 
 # Set all local crates to DEBUG, keeping any existing RUST_LOG.
 export RUST_LOG="${RUST_LOG:-warn},$(cargo tree --workspace --depth 0 | grep -oE '^[a-z][a-z0-9_-]+' | sed 's/-/_/g' | sed 's/$/=debug/' | paste -sd, -)"
@@ -50,7 +62,12 @@ cargo check --all-targets || fail "test targets failed to compile"
 pass "Test targets compile"
 
 step "Tests"
-cargo test --all-targets || fail "tests failed"
+if [ "$HAS_JJ" = 1 ] && [ "$HAS_SANDBOX" = 1 ]; then
+    cargo test --all-targets || fail "tests failed"
+else
+    # `sandbox-local` shells out to `jj` and needs a sandboxing tool.
+    cargo test --all-targets --workspace --exclude sandbox-local || fail "tests failed"
+fi
 pass "All tests passed"
 
 step "Doctests"
@@ -59,6 +76,29 @@ step "Doctests"
 # infinity-mdtests crate turns into doctests via `include_mdtests`.
 cargo test --doc || fail "doctests failed"
 pass "All doctests passed"
+
+step "WASM readiness (wasm32-unknown-unknown)"
+# Phase 0 gate for the wasm foundation crates. While the fork is migrating
+# crate-by-crate this script tracks the expected-red set instead of requiring
+# everything to pass; see docs/docs/WASM/implementation-plan.md chunk 0.
+if rustup target list --installed | grep -qx wasm32-unknown-unknown; then
+    bash scripts/check-wasm.bash || fail "WASM readiness gate failed"
+    pass "WASM readiness gate matches the expected Phase 0 state"
+else
+    echo '  (skipped: run `rustup target add wasm32-unknown-unknown`)'
+fi
+
+step "Android readiness (aarch64-linux-android)"
+# Same idea for Android: the foundation crates must compile for the NDK target.
+# Requires the rust target plus an NDK (NDK_HOME, or ANDROID_HOME/ndk/*); see
+# docs/docs/WASM/README.md → "Building for Android".
+if rustup target list --installed | grep -qx aarch64-linux-android \
+    && { [ -n "${NDK_HOME:-}" ] || [ -d "${ANDROID_HOME:-/nonexistent}/ndk" ]; }; then
+    bash scripts/check-android.bash || fail "Android readiness gate failed"
+    pass "Android readiness gate passed"
+else
+    echo '  (skipped: needs `rustup target add aarch64-linux-android` and an NDK)'
+fi
 
 step "Web UI e2e (Playwright)"
 # Requires npm (the bundled-web build script runs vite) and the Playwright

@@ -21,7 +21,8 @@ pub struct CancelSubscriptionTool<S: StateStore, H: HttpClient> {
     pub rap_notifier: Option<RapNotifier<H>>,
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<M: InputSender + 'static, S: StateStore + 'static, H: HttpClient + 'static> Tool<M>
     for CancelSubscriptionTool<S, H>
 {

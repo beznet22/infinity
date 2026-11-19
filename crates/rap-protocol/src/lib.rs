@@ -239,8 +239,28 @@ pub struct ToolDef {
 // ── Callback client ──
 
 /// Trait for sending tool results back to the RAP callback URL.
+///
+/// Native targets keep the `Send + Sync` bounds: multi-threaded servers (axum
+/// handlers, background tasks) require the returned futures to be `Send`.
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait CallbackClient: Send + Sync + 'static {
+    async fn post_json(
+        &self,
+        url: &str,
+        body: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+}
+
+/// Trait for sending tool results back to the RAP callback URL (browser).
+///
+/// On `wasm32-unknown-unknown` the futures are deliberately `!Send`: reqwest's
+/// browser backend is built on `JsFuture`, which wraps thread-local JS objects,
+/// and the wasm runtime is single-threaded by design (see
+/// `docs/docs/WASM/overview.md` §9.4, work item W2).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait CallbackClient: 'static {
     async fn post_json(
         &self,
         url: &str,
@@ -265,11 +285,9 @@ impl PlainCallbackClient {
             client: reqwest::Client::new(),
         }
     }
-}
 
-#[async_trait]
-impl CallbackClient for PlainCallbackClient {
-    async fn post_json(
+    /// Shared request body for the two target-specific `CallbackClient` impls.
+    async fn post_json_request(
         &self,
         url: &str,
         body: &str,
@@ -281,6 +299,30 @@ impl CallbackClient for PlainCallbackClient {
             .send()
             .await?;
         Ok(())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait]
+impl CallbackClient for PlainCallbackClient {
+    async fn post_json(
+        &self,
+        url: &str,
+        body: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.post_json_request(url, body).await
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+impl CallbackClient for PlainCallbackClient {
+    async fn post_json(
+        &self,
+        url: &str,
+        body: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.post_json_request(url, body).await
     }
 }
 

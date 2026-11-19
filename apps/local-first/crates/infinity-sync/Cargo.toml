@@ -1,0 +1,31 @@
+[package]
+name = "infinity-sync"
+publish = false
+version = "0.2.0"
+description = "Single-user, multi-device sync for agent sessions: an append-only event log with per-device cursors and session leases."
+edition = "2024"
+repository = { workspace = true }
+license = "Apache-2.0"
+
+[dependencies]
+rusqlite = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt"] }
+uuid = { workspace = true, features = ["v7", "serde"] }
+reqwest = { workspace = true, optional = true }
+tracing = { workspace = true }
+
+[features]
+default = ["http", "sqlite"]
+# Embedded SQLite log: durable appends for desktop and Android (the browser uses wa-sqlite).
+sqlite = ["dep:rusqlite"]
+# HTTP transport: the dev relay now, a Cloudflare Worker later.
+http = ["dep:reqwest"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

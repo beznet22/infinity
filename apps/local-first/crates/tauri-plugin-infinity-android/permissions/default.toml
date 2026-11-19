@@ -1,0 +1,13 @@
+[default]
+description = "Enables counting contacts and probing Shizuku."
+permissions = [
+  "allow-count-contacts",
+  "allow-shizuku-status",
+  "allow-whatsapp-web-probe",
+  "allow-whatsapp-pair",
+  "allow-whatsapp-state",
+  "allow-whatsapp-read",
+  "allow-whatsapp-send",
+  "allow-start-foreground-service",
+  "allow-stop-foreground-service",
+]

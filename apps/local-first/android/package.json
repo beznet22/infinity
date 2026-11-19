@@ -1,0 +1,14 @@
+{
+  "name": "infinity-hybrid-android",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "tauri": "tauri",
+    "android:init": "tauri android init",
+    "android:build": "tauri android build --apk",
+    "android:dev": "tauri android dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

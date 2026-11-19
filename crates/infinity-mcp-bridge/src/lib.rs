@@ -19,14 +19,21 @@ use infinity_agent_core::traits::InputSender;
 use infinity_provider_protocol::message::Text;
 use infinity_provider_protocol::message::{ToolResult, ToolResultContent, UserContent};
 use rap_protocol::DisplaySegment;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+#[cfg(feature = "native")]
+use serde::Serialize;
+#[cfg(feature = "native")]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(feature = "native")]
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
 /// Error type returned by MCP transports and operations.
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
+/// JSON-RPC request envelope (stdio transport only; the HTTP transport builds
+/// its bodies with `serde_json::json!`).
+#[cfg(feature = "native")]
 #[derive(Serialize)]
 struct JsonRpcRequest {
     jsonrpc: &'static str,
@@ -48,6 +55,10 @@ struct JsonRpcError {
 }
 
 /// A transport capable of sending requests to one initialized MCP session.
+///
+/// Native targets require `Send` so transports can be driven from
+/// multi-threaded runtimes.
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait McpTransport: Send {
     /// Send one JSON-RPC request and return its `result` value.
@@ -58,6 +69,23 @@ pub trait McpTransport: Send {
     ) -> Result<serde_json::Value, BoxError>;
 }
 
+/// A transport capable of sending requests to one initialized MCP session
+/// (browser variant: no `Send` bound — see the native definition above).
+///
+/// reqwest's browser backend returns `!Send` futures and the wasm runtime is
+/// single-threaded, so the bound is dropped (work item W8).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait McpTransport {
+    /// Send one JSON-RPC request and return its `result` value.
+    async fn request(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, BoxError>;
+}
+
+#[cfg(feature = "native")]
 struct StdioMcpTransport {
     stdin: tokio::process::ChildStdin,
     reader: BufReader<tokio::process::ChildStdout>,
@@ -65,6 +93,7 @@ struct StdioMcpTransport {
     _child: Child,
 }
 
+#[cfg(feature = "native")]
 impl StdioMcpTransport {
     async fn new(command: &[String], env: &HashMap<String, String>) -> Result<Self, BoxError> {
         let (executable, args) = command.split_first().ok_or("empty MCP command")?;
@@ -90,6 +119,7 @@ impl StdioMcpTransport {
     }
 }
 
+#[cfg(feature = "native")]
 #[async_trait]
 impl McpTransport for StdioMcpTransport {
     async fn request(
@@ -134,13 +164,19 @@ struct HttpMcpTransport {
 }
 
 impl HttpMcpTransport {
-    async fn new(url: String, headers: HashMap<String, String>) -> Result<Self, BoxError> {
+    /// Build with a caller-supplied client (see `SimpleHttpClient::with_client`
+    /// for why Android must pass its own TLS stack).
+    async fn with_client(
+        url: String,
+        headers: HashMap<String, String>,
+        http: reqwest::Client,
+    ) -> Result<Self, BoxError> {
         let mut transport = Self {
             url,
             headers,
             session_id: None,
             next_id: 0,
-            http: reqwest::Client::new(),
+            http,
         };
         initialize(&mut transport).await?;
         transport.notify_initialized().await?;
@@ -172,7 +208,8 @@ impl HttpMcpTransport {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl McpTransport for HttpMcpTransport {
     async fn request(
         &mut self,
@@ -244,11 +281,18 @@ async fn initialize(transport: &mut dyn McpTransport) -> Result<(), BoxError> {
 }
 
 /// Factory for a lazily initialized MCP transport.
+#[cfg(not(target_arch = "wasm32"))]
 pub type McpTransportFactory = Arc<
     dyn Fn() -> Pin<Box<dyn Future<Output = Result<Box<dyn McpTransport>, BoxError>> + Send>>
         + Send
         + Sync,
 >;
+
+/// Factory for a lazily initialized MCP transport (browser variant: the
+/// spawned future and the closure carry no `Send` bounds).
+#[cfg(target_arch = "wasm32")]
+pub type McpTransportFactory =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Result<Box<dyn McpTransport>, BoxError>>>>>;
 
 /// A lazily initialized, serialized MCP session.
 #[derive(Clone)]
@@ -269,6 +313,7 @@ impl McpClient {
     }
 
     /// Create a lazy stdio MCP client.
+    #[cfg(feature = "native")]
     pub fn stdio(
         name: impl Into<String>,
         command: Vec<String>,
@@ -293,15 +338,29 @@ impl McpClient {
         url: impl Into<String>,
         headers: HashMap<String, String>,
     ) -> Self {
+        Self::http_with_client(name, url, headers, reqwest::Client::new())
+    }
+
+    /// Lazy Streamable HTTP MCP client using a caller-supplied reqwest client,
+    /// so the host controls TLS, timeouts and proxies for MCP too.
+    pub fn http_with_client(
+        name: impl Into<String>,
+        url: impl Into<String>,
+        headers: HashMap<String, String>,
+        client: reqwest::Client,
+    ) -> Self {
         let url = url.into();
         Self::new(
             name,
             Arc::new(move || {
                 let url = url.clone();
                 let headers = headers.clone();
+                let client = client.clone();
                 Box::pin(async move {
-                    Ok(Box::new(HttpMcpTransport::new(url, headers).await?)
-                        as Box<dyn McpTransport>)
+                    Ok(
+                        Box::new(HttpMcpTransport::with_client(url, headers, client).await?)
+                            as Box<dyn McpTransport>,
+                    )
                 })
             }),
         )
@@ -427,6 +486,7 @@ pub struct McpToolSet {
 
 impl McpToolSet {
     /// Create a toolset for a lazy stdio MCP server.
+    #[cfg(feature = "native")]
     pub fn stdio(
         name: impl Into<String>,
         command: Vec<String>,
@@ -629,7 +689,8 @@ struct McpTool {
     client: McpClient,
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl Tool<ChannelSender> for McpTool {
     fn name(&self) -> &str {
         &self.definition.name
@@ -658,7 +719,7 @@ impl Tool<ChannelSender> for McpTool {
         let tool_name = self.definition.name.clone();
         let group_id = context.group_id.clone();
         let sender = context.message_sender.clone();
-        tokio::spawn(async move {
+        let deliver = async move {
             let (text, display_as) = client.dispatch(&tool_name, &arguments).await;
             let message = InputMessage {
                 content: InputMessageContent::User(UserContent::ToolResult(ToolResult {
@@ -675,7 +736,14 @@ impl Tool<ChannelSender> for McpTool {
             if let Err(error) = sender.send_to_input_queue(message, id.as_str()).await {
                 tracing::warn!(%error, "failed to deliver MCP tool result");
             }
-        });
+        };
+        // Native runtimes spawn onto the multi-threaded runtime; the browser is
+        // single-threaded, so the delivery task must be local (requires a
+        // `LocalSet` in the surrounding runtime — Phase 3 wiring).
+        #[cfg(not(target_arch = "wasm32"))]
+        tokio::spawn(deliver);
+        #[cfg(target_arch = "wasm32")]
+        tokio::task::spawn_local(deliver);
         Ok(())
     }
 }
@@ -793,5 +861,54 @@ mod tests {
             2,
             "unknown operation must not hit the server"
         );
+    }
+
+    /// The Streamable HTTP transport must accept an SSE response and remember
+    /// the `mcp-session-id` the server hands out.
+    #[tokio::test]
+    async fn http_transport_parses_sse_responses_and_tracks_the_session_id() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener address");
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut request = [0u8; 4096];
+            let read = socket.read(&mut request).await.expect("read request");
+            assert!(read > 0, "client sent no request bytes");
+
+            let body =
+                "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nmcp-session-id: session-123\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body,
+            );
+            socket
+                .write_all(response.as_bytes())
+                .await
+                .expect("write response");
+        });
+
+        let mut transport = HttpMcpTransport {
+            url: format!("http://{addr}/mcp"),
+            headers: HashMap::new(),
+            session_id: None,
+            next_id: 0,
+            http: reqwest::Client::new(),
+        };
+
+        let result = transport
+            .request("tools/list", None)
+            .await
+            .expect("request over sse");
+        assert_eq!(result, serde_json::json!({"ok": true}));
+        assert_eq!(transport.session_id.as_deref(), Some("session-123"));
+
+        server.await.expect("server task");
     }
 }

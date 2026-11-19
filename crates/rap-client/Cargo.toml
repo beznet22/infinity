@@ -15,6 +15,11 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
+
+# The local callback server binds a loopback TCP socket via hyper, which a
+# browser cannot do: it is native-only (work item W3). Browser callback
+# ingestion is an in-page seam that lands with the wasm runtime.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["net"] }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }

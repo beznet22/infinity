@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>local-first sync (browser)</title>
+<h1>SQLite (wa-sqlite) + OPFS + Cloudflare D1</h1>
+<pre id="out">starting…</pre>
+<script type="module">
+  const out = document.getElementById("out");
+  const worker = new Worker("./sync-worker.mjs", { type: "module" });
+  worker.onmessage = (event) => {
+    out.textContent = JSON.stringify(event.data, null, 2);
+    window.__syncResult = event.data;
+  };
+  worker.onerror = (event) => {
+    out.textContent = "worker error: " + (event.message || "unknown");
+    window.__syncResult = { error: event.message || "worker error" };
+  };
+</script>

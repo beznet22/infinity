@@ -1,0 +1,220 @@
+# PROGRESS — Infinity Hybrid Fork (WASM + Android + Cloudflare)
+
+Living **status** tracker (the *spec* is [`implementation-plan.md`](./implementation-plan.md)).
+Legend: ✅ done · 🔶 in progress · ⬜ pending · 🚫 blocked.
+
+Docs: [`HANDOFF.md`](./HANDOFF.md) **consumer-app integration and remediation guide** · [`overview.md`](./overview.md) blueprint · [`audit.md`](./audit.md) claim-by-claim audit · [`decisions.md`](./decisions.md) D1–D64 · [`implementation-plan.md`](./implementation-plan.md) original chunk spec · evidence note `.kimchi/docs/wasm-overview-external-verification.md`.
+
+> The original phase rows below record stages of implementation, not a single finished product. Follow the later decisions and chunk log for the latest state. In particular, durable core model context, stable session identity, an integrated browser driver, and a working desktop GUI are **not** completed; the handoff identifies these as required target-app work.
+
+**Branch:** `feat/wasm-android-hybrid` in the git worktree `../infinity-hybrid` (overview §1). The root checkout stays on `main`.
+
+**Last updated:** 2026-11-17
+
+---
+
+## 1. Blueprint, Audit & Decisions ✅ COMPLETE
+
+| Item | Status | Artifact |
+|---|---|---|
+| Original overview backed up | ✅ | `.kimchi/docs/overview-original-backup.md` |
+| External + in-repo fact-check (5 reference repos, platform claims, toolchain, chrome-devtools-mcp) | ✅ | research note §1–§5 |
+| Compiler-verified wasm readiness sweep (7 crates; **1 green / 6 red**; W1–W10 derived) | ✅ | research note §6, `audit.md` Appendix C, overview §9 |
+| WASM toolchain research (wasm-pack 0.15.1, wabt, Twiggy ⚠archived, trunk, DWARF, chrome-devtools-mcp) | ✅ | research note §4, overview §8 |
+| Claim-by-claim audit (53 rows / 54 verdict assignments) + Feature Preservation Map | ✅ | `audit.md` |
+| Overview rewrite (§1–§10, nothing dropped, plan-vs-existing separation) | ✅ | `overview.md` |
+| Decisions D1–D17 (framing, corrections, storage, traits, scope, tooling, cloud-optional) | ✅ | `decisions.md` |
+| Host-provided HTTP research + seam matrix (`HttpClient`/`ToolsetCache`/`CallbackClient`) | ✅ | research note §7, overview §9.4, D15 |
+| Cloud-optional verification (Android FGS, browser slices, direct LLM CORS, local callbacks) | ✅ | research note §8, overview §2.5, D17 |
+| Full-docs consistency pass (12 flaws F1–F12 corrected) | ✅ | this session |
+| Implementation plan (Phases 0–4, chunks 0.1–4.3) | ✅ | `implementation-plan.md` |
+
+---
+
+## 2. Implementation Phases — index
+
+Chunk IDs below are authoritative from `implementation-plan.md`; where reality diverged the row says so.
+
+| Phase | Chunks | Scope | Status |
+|---|---|---|---|
+| 0 | 0.1–0.8 | WASM readiness (W1–W10 + CI gate) | ✅ complete — gate now covers 9 crates (7 at exit) |
+| 1 | 1.1–1.5 | Core adapter traits + `HostCtx` (D20) | ✅ complete — 1.2/1.3 deferred (D19) |
+| 2 | 2.1–2.5 | Android reference probes and UI | ✅ mechanisms verified on device; production core/session driver unfinished |
+| 3 | 3.1–3.5 | Wasm model turns, durable stores, OPFS UI and tool probes | 🔶 individual mechanisms verified; integrated stable-session browser runtime unfinished |
+| 4 | 4.1–4.3 | Optional sync/relay and edge adapters | 🔶 local Worker/D1 relay verified and deleted; remote edge adapters and public deployment not implemented |
+
+Promoted decisions (recorded in the plan, echoed into `decisions.md` when each chunk starts): **D18 `SliceTimer`** (chunk 0.5) · **D20 `HostCtx`** (chunk 1.4) · **D21 optional edge relay** (chunk 4.3).
+
+---
+
+## 3. Phase 0 — WASM Readiness
+
+Gate: `cargo check --target wasm32-unknown-unknown` green for the core set + the `check.bash` wasm step in place.
+
+**Baseline before this work: 1 green / 6 red. Phase 0 exit: 7 green / 0 red. The gate now lists 9 crates (`infinity-host`, `infinity-wasm` added later).**
+
+| # | Work item | Chunk | Files | Status |
+|---|---|---|---|---|
+| W4+W10+CI | Build config: getrandom `wasm_js` backend (`--cfg` **and** the feature), uuid `js` on wasm, wasm readiness gate | 0.1 | `.cargo/config.toml`, `infinity-agent-core/Cargo.toml`, `scripts/check-wasm.bash`, `check.bash` | ✅ |
+| W2 | `!Send` resolution — **cfg-gated traits**: `Send` on native, `?Send` on wasm (D15 resolution) | 0.2 | `rap-protocol/src/lib.rs` (`CallbackClient`), `rap-client/src/http.rs` (`HttpClient`) | ✅ |
+| W1+W3 | tokio `net` + hyper stack moved to non-wasm deps; `callback_server` module cfg-gated | 0.3 | `rap-client/Cargo.toml`, `rap-client/src/lib.rs` | ✅ |
+| W9 | Config-path injection (`dirs::home_dir`) | 0.4 | `infinity-protocol/src/lib.rs` | ⏭ reclassified — `dirs` **does** compile on wasm (crate is green); home dir resolves to none at runtime, so injection is a correctness item, not a blocker |
+| W2 (cont.) | **`?Send` propagation through `Tool`**: cfg-gated trait (native `Send + Sync` / wasm `?Send`) + `cfg_attr` on 11 impl sites (9 agent-core, 1 mcp-bridge, 1 `NoRapHttp`) | 0.5 | `infinity-agent-core/src/tools/{mod,rap_tool,thread,cancel_subscription,sleep}.rs`, `system/builder.rs`, `infinity-mcp-bridge/src/lib.rs` | ✅ |
+| W5+W6 | `SliceTimer` (**D18**), direct `std::fs` removal, gating `system/local/` | 0.5 → **Phase 3** | `infinity-agent-core` | ⏭ deferred — none of these block compilation (`tokio::time` and `std::fs` compile and fail only at runtime; `system/local` has no process/net/thread usage) |
+| W7 | Sandbox trait/impl split — default-on `native` feature gating `server`/`git`/`jj` + `SpawnedCommand`/`spawn_command` and their 8 native-only deps; gate runs the crate with `--no-default-features` | 0.6 | `sandbox-core/{Cargo.toml,src/lib.rs,src/sandbox.rs}`, `scripts/check-wasm.bash` | ✅ |
+| W8 | Gate the stdio transport behind the default-on `native` feature; cfg-gate `McpTransport` + `McpTransportFactory` (native `Send` / wasm none); `spawn_local` for tool-result delivery in the browser | 0.7 | `infinity-mcp-bridge/{Cargo.toml,src/lib.rs}`, `scripts/check-wasm.bash` | ✅ |
+| — | Sweep + record + exit | 0.8 | all 7 crates | ✅ — wasm gate, native workspace, 141 tests, clippy and fmt all clean |
+
+---
+
+## 4. Phase 1 — Core Adapter Traits ✅ COMPLETE
+
+| Chunk | Deliverable | Status |
+|---|---|---|
+| 1.1 | `SandboxExecutor` trait + `ProcessSandboxExecutor` + tests | ✅ |
+| 1.2 | `SliceRunner` trait — **deferred to Phase 3/4 (D19)** | ⏭ |
+| 1.3 | `AgentCoordinator` trait — **deferred to Phase 3/4 (D19)** | ⏭ |
+| 1.4 | `HostCtx` bundle (**D20**) in new `crates/infinity-host` + accessor/parts tests | ✅ |
+| 1.5 | MCP HTTP/SSE — already implemented upstream; added an SSE test | ✅ |
+
+---
+
+## 5. Phase 2 — Android reference mechanisms ✅ (production runtime unfinished)
+
+Every row was verified on a real device (Android 13, arm64-v8a), headlessly, with
+no UI interaction — `adb` plus probe files in the app's data dir.
+
+| Chunk | Deliverable | Status |
+|---|---|---|
+| 2.1 | Scaffold (excluded from the workspace, D16) + Tauri CLI + signed debug APKs | ✅ — APKs for x86_64 and aarch64; build gotchas recorded in the archetype README |
+| 2.2 | End-to-end agent on device: `HostCtx` + `ProcessSandboxExecutor` | ✅ — `probe.json`; the run found and fixed a real `ENOENT` (missing cwd) |
+| 2.2b | Real model turn over HTTPS (Kimchi, `gemma-4-31b`) | ✅ — `chat.json`; found and fixed a silent TLS hang (D21) |
+| 2.3 | Kotlin plugin: contacts + Shizuku probe; notifications via the official plugin | ✅ — 1064 contacts, notification in `dumpsys`, Shizuku absent (compile-only) |
+| 2.4 | WhatsApp WebView prototype — **allowed to fail** | ✅ technically — client boots, QR renders, live in a hidden view (D24) |
+| 2.5 | WhatsApp automation: pairing by phone number, state/read/send (dry-run default) | ✅ read retry and state verified; one **user-approved real delivery via direct CDP**, not the plugin command. Plugin send verification and exact-recipient defenses remain open (D64) |
+
+**Phase 2 evidence:** sandbox probe, real model turn, contacts/notification/Shizuku probes, WhatsApp view + pairing, foreground/lease-aware queue-driving probe, SQLite UI edits. Failures worth keeping: a silent TLS stall, a missing sandbox cwd, a rebuild-during-linking mistake, and a composer-focus bug (D26/D64). Core model conversation/state remains in-memory and the desktop host is blocked by a plugin type mismatch; see `HANDOFF.md` §3–§6 before reuse.
+
+---
+
+## 6. Phase 3 — Browser Runtime (`crates/infinity-wasm`) 🔶 IN PROGRESS
+
+The individual pieces were verified in subsequent E2E work, but they remain separate experiments until a stable-session browser driver unifies them (see `HANDOFF.md` §7).
+
+| Chunk | Deliverable | Status |
+|---|---|---|
+| 3.1 | Crate scaffold, workspace member, gate entry | ✅ — `crates/infinity-wasm`; wasm gate now covers 9 crates |
+| 3.2 | `SliceTimer` over `wasmtimer` 0.4 (boxed future, no `async_trait`) | ✅ — 4 tests pass natively; wasm build green |
+| 3.3 | Durable core state/history and OPFS display log | ✅ actor-handle IndexedDB stores and dedicated-worker OPFS each survived reload; **not unified into a stable-session UI** (D38/D39/D62) |
+| 3.4 | `wasm-bindgen` JS API, `wasm-pack`, demo and browser model turns | ✅ mock and real provider proof; own session/thread identity still to integrate (D35–D37) |
+| 3.5 | Browser Worker isolation, Android wasmi and size gates | ✅ independent tool executors and budgets verified (D55/D56/D58); actual tool-registry connection remains open |
+
+Folded in from the original plan: wasmsh/OPFS/SharedWorker land with 3.5, since a
+sandbox and a coordinator are only meaningful once the runtime can sleep, store
+and be called from JS.
+
+---
+
+## 7. Phase 4 — Local relay reference ✅ / production edge ⬜
+
+| Chunk | Deliverable | Status |
+|---|---|---|
+| 4.1 | `crates/infinity-remote-adapters` (DO slice runner, stable edge stores, DO alarms, Sandbox SDK, MCP relay) | ⬜ not implemented |
+| 4.2 | Worker archetype | ✅ local reference at `apps/local-first/worker`; token auth, atomic stale-fence writes and typecheck verified (D57), but user namespacing/rate limits are incomplete |
+| 4.3 | Optional relay | ✅ local sync/cursor/watch experiments (D31–D34, D52); intentionally **no public deployment**, no integrated browser relay path, no Web Push wake |
+
+---
+
+## 8. Verification Gates
+
+| Gate | Current state (verified) | Target |
+|---|---|---|
+| `cargo check --target wasm32-unknown-unknown` (core set) | **7 green / 0 expected-red** — verified in the worktree | all 7 green (Phase 0 exit) — **reached** |
+| `bash scripts/check-wasm.bash` | ✅ **green** — pins the expected state: fails if a green crate regresses or a red crate turns green unnoticed | stays green while `EXPECTED_RED` shrinks |
+| `check.bash` | ✅ exits 0 in the recorded E1 run, explicitly skipping unavailable optional prerequisites/tools (D41) | stay green; distinguish skips from executed tests |
+| Native build (`cargo check --workspace --all-targets`) | ✅ **green** after the trait cfg-split (axum `Send` preserved) | stays green after every Phase 0/1 change |
+| Native tests | `cargo test -p rap-protocol -p rap-client` ✅ green; full suite not yet run (same `jj` prerequisite) | green baseline, held after every change |
+| Feature preservation (original overview) | **100% mapped** — verified (`audit.md` Appendix A) | stays 100% through any doc change |
+| Cloud-optional regression | Local foundations and mock/real device/browser turns work with the relay deleted | target app must preserve local-only operation; external credentials and enabled CORS remain provider prerequisites |
+
+---
+
+## 9. Known Environment Notes
+
+- `check.bash` prerequisites include `jj` (jujutsu) and `bwrap`/`sandbox-exec`; both must be present to run the full suite. Missing `jj` in this dev env is pre-existing and unrelated to the documentation work.
+- `docs/` prettier (`format:check`) covers only `src/**/*.{tsx,ts,css}` + `docusaurus.config.ts` — markdown in `docs/docs/WASM/` is not in its scope.
+- These docs are not wired into `docs/sidebars.ts` (autogenerated dirs cover only infinity-code/infinity-runtime/rap) — publishing to the site remains a possible follow-up (D13).
+
+---
+
+## 10. Chunk log
+
+| Date | Chunk | Result |
+|---|---|---|
+| 2026-11-17 | 0.1 | `.cargo/config.toml` selects getrandom's `wasm_js` backend for `wasm32-unknown-unknown`; `infinity-agent-core` enables getrandom `wasm_js` (via rhai→ahash) and uuid `js` on wasm (uuid requires one of `js`/`rng-getrandom`/`rng-rand` there); added `scripts/check-wasm.bash` and wired it into `check.bash`. getrandom + uuid now compile for wasm. |
+| 2026-11-17 | 0.2 | `CallbackClient` (rap-protocol) and `HttpClient` (rap-client) split by cfg: native keeps `Send + Sync`, wasm uses `?Send`; request bodies hoisted into shared inherent methods. `rap-protocol` green on wasm; native workspace still green. |
+| 2026-11-17 | 0.3 | tokio `net`, `hyper`, `hyper-util`, `http-body-util` moved to non-wasm deps in `rap-client`; `callback_server` module cfg-gated. `rap-client` green on wasm. |
+| 2026-11-17 | 0.4 | **Reclassified, not implemented:** `infinity-protocol` is green without path injection (the `dirs` crate compiles for wasm). `dirs::home_dir()` yields no directory at runtime on wasm, so injection remains a Phase 3 correctness item rather than a compile blocker. |
+| 2026-11-17 | 0.5 | `Tool<M>` cfg-gated (native `Send + Sync` + `#[async_trait]`; wasm bare + `?Send`), `cfg_attr` on 11 impl sites including `NoRapHttp` (E0053). `infinity-agent-core` green on wasm. **W5/W6/`system/local` deferred to Phase 3** (D18): they are runtime-correctness items, not compile blockers. |
+| 2026-11-17 | process | Work (docs audit + chunks 0.1–0.5) had been done on `main` in the root checkout; corrected by moving everything into the `../infinity-hybrid` worktree on `feat/wasm-android-hybrid` (overview §1). Root is clean on `main` again. |
+| 2026-11-17 | 0.6 | `sandbox-core` gained a default-on `native` feature gating `server`/`git`/`jj`, `SpawnedCommand`/`SandboxBackend::spawn_command`, and 8 native-only deps (axum, reqwest, similar, which, tempfile, base64, tokio, tracing). Browser builds use `--no-default-features`; the gate passes that flag for this crate. Verified: wasm green, native workspace green, 31 sandbox-core tests pass. Found: `which` 8.0.2 does not compile for wasm at all (`E0046`), reachable only from the gated server. |
+| 2026-11-17 | docs | Added `docs/docs/WASM/README.md` — consumer guide covering the `default-features = false` requirement and its failure modes, RNG features, the target-dependent `Send` bounds, and the runtime-only wasm limits. |
+| 2026-11-17 | 0.7 | `infinity-mcp-bridge` gained the same default-on `native` feature (stdio transport, `tokio/process` + `tokio/io-util`), cfg-gated `McpTransport` and `McpTransportFactory`, and `tokio::task::spawn_local` for tool-result delivery in the browser. `JsonRpcRequest` + the `Serialize` import are native-only (clippy caught both). Gate reached **7 green / 0 expected-red**. Verified: native workspace green, mcp-bridge tests pass, clippy clean with and without default features. |
+| 2026-11-17 | 0.8 | Phase 0 exit verified: wasm gate 7/7 green (empty expected-red set), native `cargo check --workspace --all-targets` green, 141 tests passing across the touched crates (`rap-protocol`, `rap-client`, `infinity-agent-core` 108, `sandbox-core` 31, `infinity-mcp-bridge`), `cargo fmt --check` clean, clippy clean with and without default features. |
+| 2026-11-17 | 1.1 | `sandbox-core` gained `executor`: portable `SandboxExecutor` (cfg-gated `Send`), `ExecRequest`/`ExecOutput`, and native `ProcessSandboxExecutor` with path confinement. 3 tests, including object-safety through `Box<dyn SandboxExecutor>`. |
+| 2026-11-17 | 1.5 | No implementation work needed — `HttpMcpTransport` already does Streamable HTTP + SSE. Added a test with a fake loopback server covering SSE parsing and `mcp-session-id` capture. |
+| 2026-11-17 | 1.2/1.3 | **Deferred to Phase 3/4** (D19): the flows already exist as `AgentSystem::step` / `SessionManager`; extracting traits now would guess the shape and refactor untestable AWS/daemon code. |
+| 2026-11-17 | 1.4 | New fork-only crate `infinity-host` (D20) exposing `HostCtx<C,S,H,T,E>` + optional MCP factory; default-on `native` feature forwards to `sandbox-core`/`infinity-mcp-bridge`. Gate now covers 8 crates. Tests: capability access, optional MCP, `into_parts`. |
+| 2026-11-17 | 2.1 | `apps/local-first/android` scaffolded (excluded from the workspace, D16), Tauri CLI 2.12.5 via pnpm, `android init`, then release + signed debug APKs built for x86_64 and aarch64. Build findings recorded in the archetype README: `frontendDist` is relative to the config, `bundle.targets` must be `"all"` (`--apk` selects the APK), icons must be **RGBA**, and `JAVA_HOME` must point at a real JDK. |
+| 2026-11-17 | 2.2 | Verified on a real device (Android 13, arm64-v8a) **headlessly**: `adb install` → `am start` → `run-as cat probe.json` returned `{"target":"aarch64","sandbox_status":0,"sandbox_stdout":"infinity-on-android"}`. The run found a real bug — `ProcessSandboxExecutor` spawned with a nonexistent cwd (`ENOENT`); fixed by creating the root/cwd before spawning, with a regression test. |
+| 2026-11-17 | env | Emulator could not boot under host memory pressure (587 MB free, swap exhausted); Gradle + Kotlin daemons were stopped to recover ~15 GB. The KVM device was present but the user lacked group access (fixed with an ACL); the device run used the physical phone instead. |
+| 2026-11-17 | 2.2b | Real model turn on-device over HTTPS: `chat.json` → `{"model":"gemma-4-31b","reply":"infinity-on-android-llm","notes":[],"timed_out":false}` in ~10 s, key pushed at runtime via `run-as`. The first attempts **hung with no error or log line**: reqwest 0.13's `rustls` feature always routes through `rustls-platform-verifier`, whose Android backend needs JNI init plus a Kotlin AAR (reqwest#2966, tauri#13267). Fixed without Gradle by building a `rustls::ClientConfig` from embedded `webpki-roots` and injecting it via `use_preconfigured_tls` + rig's `.http_client()`. Also found: `CompletionsClient<H>`'s `H` must be pinned (`CompletionsClient::<reqwest::Client>::builder()`) because `.http_client()` replaces it. |
+| 2026-11-17 | 2.3 | New `apps/local-first/android/crates/tauri-plugin-infinity-android` (D22): Kotlin `@Command`s for `count_contacts` and `shizuku_status`, a Rust half that forwards over `run_mobile_plugin`, an `Unsupported` desktop stub, and `permissions/default.toml`. Notifications use the official `tauri-plugin-notification`. Verified headlessly with `scripts/device-probe.sh`: `pm grant READ_CONTACTS` → `{"count": 1064, "granted": true}`; `POST_NOTIFICATIONS` → `native.json` says `"shown"` and a `NotificationRecord` appears in `dumpsys notification`; `shizuku_status` → `{"installed": false, "running": false, "sdkInt": 33}` (Shizuku is not installed, so that path stays compile-only). Widget: `run_mobile_plugin` must not be called on the setup path, because `count_contacts` can wait on a permission prompt. |
+| 2026-11-17 | 2.4 | WhatsApp Web prototype **succeeded technically**: an overlay `WebView` with a desktop UA loaded `web.whatsapp.com` to `readyState: complete`, rendered the QR canvas, and reported `serviceWorker`/`indexedDB`/`subtleCrypto`; `screencap` shows the real login screen. Pairing needs a human scan, so no session was created. Recorded as D24 with the ToS constraint: WhatsApp names unofficial clients and automation as ban triggers, so the fork shows the view and ships no automation. The probe is opt-in through a `whatsapp-probe` marker file. |
+| 2026-11-17 | 2.5 | WhatsApp automation (D25/D26). Hidden WebView at full size inserted at index 0, behind Tauri's UI, keeps a real 360 px viewport. Pairing by phone number works; the link survives restarts via IndexedDB. Synthetic `click()` does nothing on chat rows — trusted `MotionEvent` taps do. `whatsapp_state` verified (21 chat rows), message selector verified over CDP (23 messages), send implemented with dry-run default. |
+| 2026-11-17 | process | Two self-inflicted failures recorded so they are not repeated: rebuilding the app mid-link kills the pairing handshake; and a 1.5 s wait after tapping a chat reads an empty panel, so reads retry until messages render. |
+| 2026-11-17 | 3.1 | New fork crate `crates/infinity-wasm` (browser runtime). It builds for the host and for `wasm32-unknown-unknown`, is a workspace member, and the wasm gate now covers it — 9 crates green. Two tests state the browser's actual capabilities (no process sandbox). |
+| 2026-11-17 | 3.2 | `SliceTimer` over `wasmtimer` 0.4.5, as a boxed-future trait (not `async_trait`: the browser's futures are `!Send`, the same constraint as D15). Native builds keep `tokio::time`. 4 tests pass; one initially failed because a tokio sleep future was created outside a runtime. |
+| 2026-11-17 | 3.3 | **Blocked, not built.** Relaxing the store traits' `Send + Sync` bounds is not enough: the core's async functions require `Send` futures, so a `!Send` IndexedDB handle fails at `event_processor.rs:209` and `system/local/router.rs:338`. Reverted; both targets green. The real work is `?Send` propagation on wasm (D27). Library research done: `idb` 0.6.5, `wasmtimer` 0.4.5, `wasmi` 1.0.9; OPFS/SQLite compared and deferred (needs a dedicated worker and 0.5–1 MB of wasm for queries the traits do not use). |
+| 2026-11-17 | 3.3 | Storage engine **proven**: `@sqlite.org/sqlite-wasm` 3.54.1 + OPFS in a dedicated worker (headless Chrome via CDP). 100 rows per load; reload went 100 → 200 (`persistence: PASS`). Cost measured: wasm 879,084 B raw / 407,552 B gzip, JS API 656,872 B (D28). Wiring into the core still waits on `?Send` (D27). |
+| 2026-11-17 | E2E-1 | New `crates/infinity-sync`: immutable `SyncEvent` (UUIDv7 ids), `EventStore` contract, JSONL `FileEventStore`, per-device `CursorStore`. 6 tests green (ordered reads, idempotent re-append, session listing, cursors). Native-only: the browser store waits on D27. |
+| 2026-11-17 | tooling | Installed per overview §8: `wasm-pack` 0.15.1, `wasm-opt` 133 (Binaryen release; the npm shim had no linux binary and was removed), `trunk` 0.22.1, `twiggy` 0.8.0, `wabt` via npm. `chrome-devtools-mcp` written to `~/.config/kimchi/harness/mcp.json` with `--headless --isolated` — takes effect on the next Kimchi start. |
+| 2026-11-17 | E2E-2 | Cloudflare Worker (`apps/local-first/worker`) + D1: `POST /v1/sync/push` (idempotent on `(session_id, event_id)`), `GET /v1/sync/pull?session&after`, `/v1/sync/sessions`, `/health`. Schema applied locally with `wrangler d1 execute --local`; served by `wrangler dev` on port 8790 (8787/8788 are taken on this host). |
+| 2026-11-17 | E2E-3 | Two-device test through the Worker: laptop wrote and pushed (`accepted: 1`); phone pulled (`fetched: 1`, `position: 1`); a repeat pull fetched `0`. Found and fixed a protocol bug: per-device `seq` cannot order across devices — the relay assigns `position` and cursors track that (D31 corrected). |
+| 2026-11-17 | E2E-4 | Android probe against the **deployed** Worker: `pushed 1, fetched 3, position 3`. Found the D21 TLS stall again — the sync transport must take the app's portable client (`HttpTransport::with_client`). Also fixed the APK build recipe: `JAVA_HOME` validation, NDK linker env, self-locating cwd (now `scripts/build-apk.sh`). |
+| 2026-11-17 | E2E-5/6 | Browser device: wa-sqlite 3.44.0 + `AccessHandlePoolVFS` over OPFS talking to the same Worker. First load `0 → 8`, `devices: browser,laptop,android`; reload kept 8 and fetched 1 (`persistence: PASS`). Three devices now share one session, each pushing its own events. |
+| 2026-11-17 | deploy | Worker + D1 live (`local-first-sync.beznet22.workers.dev`, WEUR). Credentials used from `apps/.env` without exposure. Post-deploy propagation briefly returned CF `1042`; retry, don't debug. |
+| 2026-11-17 | wasm-e2e | `crates/infinity-wasm` built with `wasm-pack` and executed in headless Chrome: mock turn `infinity-wasm-turn-ok`, then a **real OpenRouter turn** `infinity-browser-openrouter-ok` via a runtime-injected key. Release bundle 3,919,251 B raw / 1,028,494 B gzip + 31,456 B JS. Findings: `LocalSet::run_until` works without a tokio runtime; `!Send` reqwest futures are bridged through `spawn_local` + mpsc; OpenRouter allows CORS, so no proxy is needed for it (D35). |
+| 2026-11-17 | teardown | Test relay removed after the e2e: `wrangler delete` (Worker) and `wrangler d1 delete` (database) both confirmed; the workers.dev URL now 404s. Local D1 state and temporary device dirs cleaned. Redeploy = create D1 → apply `schema.sql` → `wrangler deploy`. |
+| 2026-11-17 | sizes | All-platform bundle measured: fork CLI 26.3 MB raw / 20.9 MB stripped / 8.6 MB gzip; app CLI 7.5 / 6.2 / 2.8 MB; wasm 3.92 MB raw / 1.03 MB gzip + 32 KB JS; release APK 27.5 MB (94% native `.so`, arm64); debug APK 524 MB (symbols + all ABIs). |
+| 2026-11-17 | provider | Hardcoded OpenRouter replaced by a generic OpenAI-compatible provider (`run_openai_compatible_turn(base_url, key, model, prompt)`). Mock turn still verified in Chrome. The real-endpoint turn is **blocked** by three measured issues: `std::time` unimplemented on wasm, a js-sys `RefCell already borrowed` reentrancy panic in the `spawn_local` bridge, and a 429 from the free model (D36). |
+| 2026-11-17 | A1/A2/A3 | Browser real turn **works**: retry sleeps now go through `retry_delay` (wasmtimer on wasm), which removed the `std::time` abort; the js-sys reentrancy panic was fallout and did not recur. Verified through a local CORS proxy against Kimchi's `gemma-4-31b` (OpenRouter is out of credits, Kimchi has no CORS). |
+| 2026-11-17 | B1 | HTTP client injection added to `SimpleHttpClient`, `HttpMcpTransport` and `McpClient::http_with_client`; the Android host now passes its portable TLS client. |
+| 2026-11-17 | A4 | Durable browser state without changing the core: `IndexedDbStateStore` is a `Send + Sync` handle whose `!Send` IDB connection runs in a `LocalSet` actor. Verified across a page reload (`before=0 after=1` → `before=1 after=2`); turns now use it. Conversation history remains in-memory (next). |
+| 2026-11-17 | A4b | `IndexedDbConversationStore` (full trait, same actor pattern) wired alongside the state store; both durable across a reload (`before=0 after=1` → `before=1 after=2`) and the mock turn runs on them. Found and fixed an IDB versioning trap: two stores sharing one database at the same version means only the first creates its object store (D39). |
+| 2026-11-17 | B2/B3 | Leases and snapshots implemented as events: `current_lease`/`may_write` derive the holder from the log (expiry, last-claim-wins, release), and `replay` returns the newest snapshot plus its tail. 12 crate tests; CLI commands `lease`, `snapshot`, `replay` demonstrated end-to-end (`holder: laptop`, `covered: 2`, `tail: 1`). Enforcement at turn start is still pending (D40). |
+| 2026-11-17 | E1 | `check.bash` no longer aborts on missing `jj`/`bwrap`: optional tools are reported and `sandbox-local` is excluded. Full run exits **0** (fmt, clippy, tests, doctests, wasm 9 crates, Android 8 crates). Added `.github/workflows/fork-ci.yml` with wasm/Android/archetype/worker/wasm-pack jobs. Fixed every clippy finding the previously-aborted run had hidden (D41). |
+| 2026-11-17 | B2-enforce | `LeaseGuard::acquire/renew/release` pairs the check with the claim, so two devices cannot both start. 3 new tests (refusal, handover, expiry, renewal) → 15 total. CLI `guard`/`unguard` demonstrates laptop → refused phone → release → phone. Host wiring around turns is still the remaining step (D42). |
+| 2026-11-17 | B2-wire | Android chat probe claims `android-chat` before the turn and releases after: device run `{"reply":"infinity-on-android-llm","lease":"released"}` with `claim android` → `release android` in the log. Planting a foreign claim makes it return `lease: denied` without calling the model. Renewal for turns longer than the TTL is still open (D43). |
+| 2026-11-17 | B2-2devices | Chat probe pulls before judging and pushes its claim/release; `hold_lease` added for testing. Two physical devices through a local Worker+D1: phone A held and answered, tablet B was `denied` without calling the model. The 60 s TTL forced a re-claim within a minute, which is what the foreground-service heartbeat must fix (D44). |
+| 2026-11-17 | A5 | Foreground service (`dataSync`, channel `infinity-session`) started/stopped around the chat probe, and the turn renews the lease every 5 s. On the tablet: service notification observed during the turn; a short turn gave `claim→release`; an 8 s turn gave `claim→renew→release`. Android 12/14/15 limits and the fencing-token follow-up recorded in D45. |
+| 2026-11-17 | B4 | Fencing tokens: `fence` on claims/renewals, `LeaseLost` for a superseded holder, relay drops events below `sessions.current_fence` and reports `stale`. Verified against the local Worker: claim f1 + message f1 accepted, claim f2 accepted, stale message f1 rejected, message f2 accepted. Worker gained a `tsconfig.json`, so the CI type-check is now real rather than a no-op. |
+| 2026-11-17 | C1 | Edits and branches: `reply_to` + `edited_from` on messages, `transcript`/`versions`/`alternatives` helpers, CLI `edit`/`thread`/`--reply-to`/`--assistant`. 21 crate tests; CLI demo shows the answer to the edited text disappearing with it. Newest version only — the switcher arrives with the thread list. |
+| 2026-11-17 | C2 | Session summaries (`inbox`) and `resume` on a second device: same transcript, `holder=laptop`, `read_only=true` while the lease is held, writable after release. Message queue / remove / restore / delete audited and found absent (D49); tombstones-as-events sketched for #130. |
+| 2026-11-17 | C3 | Queue while busy (`MessageQueued`/`MessageSent`/`MessageDequeued`), delete-from-here (`ConversationTruncated`) and `ConversationRestored`. CLI: `enqueue`/`dequeue`/`send`/`queue`/`truncate`/`restore`. Demo: queue 2 → dequeue 1 → send the other → delete from the 2nd message → restore. 28 crate tests, including a reload. Driver integration still pending. |
+| 2026-11-17 | C4 | Android probe drains the durable queue: seeded 2 messages → `{"reply":"beta","drained":2}` on the tablet, with fenced `message_sent`→`assistant_message` pairs for each and one lease across all turns. Cap 5/run; configured prompt skipped when anything was drained. |
+| 2026-11-17 | C5 | `watch` polls the relay and appends new events: stub test showed `fetched 0` → `fetched 1` with the message visible on `resume`. Polling is documented as a stopgap, not push (D52). |
+| 2026-11-17 | D1 | SQLite event store (WAL, FULL sync, one tx per append) is the CLI and Android default; JSONL stays behind `--store jsonl`. 31 crate tests incl. crash simulation and backend parity. Device: seeded DB with 2 queued messages → `drained:2`, 8 fenced rows in the pulled database. |
+| 2026-11-17 | D2 | Shared `SessionView` contract with `view` in the CLI: messages/queue/truncations + holder/read_only/fence. Golden-shape test, backend-identical views, restore reflected. 36 crate tests. Browser and Android still to consume it. |
+| 2026-11-17 | E1 | Android tool sandbox (wasmi, app-layer crate): no host imports, 1 MiB memory cap, 10M fuel. 4 host tests + device self-test: benign 42, WASI import denied, infinite loop fuelled out. |
+| 2026-11-17 | E2 | Browser tool sandbox: Worker per tool, only `env.memory` allowed (16-page max, host-supplied), 500 ms termination. Headless Chrome: 42 / WASI denied / spin terminated / unbounded-memory module refused. |
+| 2026-11-17 | F1 | Atomic fencing (conditional INSERT + trigger) proven under 40 concurrent stale writes: 0 accepted, 0 landed after the claim. Relay auth: 503 unconfigured / 401 wrong / 200 correct; CLI `--relay-token`. Namespacing and rate limits still pending. |
+| 2026-11-17 | G1 | Size budgets enforced: CI fails wasm above 4.3 MB raw / 1.1 MB gzip; `check-size.sh` fails the release APK above 33 MB (measured 31,784,275, up 4.28 MB after SQLite + wasmi). E2E matrix still pending. |
+| 2026-11-17 | H1 | Shared pure renderer over `SessionView`: thread list, read-only banner, transcript + version badge, queue tray with dequeue, restore, composer. Headless-Chrome fixture emitted the expected six commands and disabled writing while read-only. Platform wiring still open (#140). |
+| 2026-11-17 | H2 | Android UI wired to the live SQLite log: `session_views` + `apply_command`, shared renderer in `dist`. Device: seeded session rendered `queued (2)`; typing + queue produced `queued (3)` and a third `message_queued` row. Browser binding still open (#141). |
+| 2026-11-17 | I1 | JS mirror of `session_view` with a Rust-generated golden fixture; `node test.mjs` parity passes (1 visible message, 1 queued, active truncation). Browser page binding still open (#142). |
+| 2026-11-17 | I2 | Browser page over OPFS: worker-owned SQLite, JS `session_view`, shared renderer, commands as events. Headless Chrome: queue → `1 events in OPFS · 1 queued`; reload preserves it. |
+| 2026-11-17 | J1 | Cross-platform E2E script: desktop (queue/send/truncate/restore), browser (OPFS queue survives reload), Android (device probe with sandbox). `E2E PASS`. Shared-relay scenario still pending. |
+| 2026-11-17 | WA1 | WhatsApp automation verified: read retry works (29 messages), dry-run types into the composer, and a real user-requested message was sent to GreatLover via CDP (1,288 chars, confirmed recipient and history). Fixed hangs on missing rows and the composer focus bug. |
+| 2026-11-17 | handoff | Added `HANDOFF.md`: consumer-target integration map, exact stable-thread/durable-core seams, platform repair checklists and acceptance matrix. Research identified prototype defects that the receiving app must not copy; no runtime fix is claimed in this docs-only revision. Baseline re-run: 36 sync + 4 sandbox tests, JS view parity and Worker typecheck pass. Desktop plugin emits the documented `E0107` errors. Updated stale phase summaries and timer notes. |
+| 2026-11-17 | debugging | Added `DEBUGGING.md`: adb artifact/logcat loops, Android WebView CDP (including the package-token traps), headless-Chrome CDP and reload persistence checks, SQLite/OPFS inspection, local relay probes, and a catalogue of verified failure signatures. Documents that the desktop GUI remains unverified. |

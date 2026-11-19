@@ -2,6 +2,8 @@
 members = [
     "crates/infinity-agent-core",
     "crates/infinity-agent-lambda",
+    "crates/infinity-host",
+    "crates/infinity-wasm",
     "crates/infinity-mcp-bridge",
     "crates/infinity-rap-bridge",
     "crates/infinity-agent-cli",
@@ -22,6 +24,12 @@ members = [
     "crates/infinity-slack-bot",
     "crates/infinity-slack-dataflow",
 ]
+# Consumer archetypes are standalone projects, not workspace members (D16).
+# They carry their own `[workspace]` table; excluding them here keeps the
+# fork's workspace from trying to own them. Nested crates (the Android plugin
+# under `apps/android-tauri/crates/`) belong to the app's workspace, so the
+# fork never pulls a desktop `tauri` build.
+exclude = ["apps/local-first"]
 resolver = "2"
 
 [workspace.package]

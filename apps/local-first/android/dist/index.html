@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Infinity</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; padding: 1rem; line-height: 1.4; }
+      .threads { display: flex; gap: .5rem; list-style: none; padding: 0; margin: 0 0 .75rem; }
+      .thread { border: 1px solid #888; border-radius: 6px; padding: .2rem .5rem; cursor: pointer; }
+      .thread--active { border-color: currentColor; font-weight: 600; }
+      .banner { background: rgba(255, 193, 7, .25); padding: .5rem; border-radius: 4px; }
+      .transcript, .queue ul { list-style: none; padding: 0; }
+      .message { margin: .5rem 0; padding: .4rem .5rem; border-radius: 6px; background: rgba(127,127,127,.1); }
+      .message .role { font-weight: 600; margin-right: .4rem; text-transform: uppercase; font-size: .75rem; }
+      .message button { margin-left: .4rem; font-size: .75rem; }
+      .queue { border-top: 1px dashed #888; margin-top: 1rem; padding-top: .5rem; }
+      .queued { display: flex; justify-content: space-between; gap: .5rem; margin: .25rem 0; }
+      .composer { display: flex; gap: .5rem; margin-top: 1rem; }
+      .composer textarea { flex: 1; font: inherit; padding: .4rem; }
+      #error { color: #b00020; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="app">loading…</div>
+    <pre id="error"></pre>
+    <script type="module">
+      import { renderThreads } from "./renderer.js";
+
+      const app = document.getElementById("app");
+      const errorBox = document.getElementById("error");
+      let views = [];
+      let active = null;
+
+      const invoke = (command, args) => window.__TAURI__.core.invoke(command, args);
+
+      async function refresh() {
+        views = await invoke("session_views");
+        if (!active && views.length > 0) active = views[0].session;
+        draw();
+      }
+
+      function draw() {
+        if (views.length === 0) {
+          app.textContent = "no sessions yet — queue a message to start one";
+          return;
+        }
+        renderThreads(
+          app,
+          { sessions: views, active },
+          {
+            onSelect: (session) => {
+              active = session;
+              draw();
+            },
+            onCommand: async (command) => {
+              try {
+                views = await invoke("apply_command", { command });
+                draw();
+              } catch (error) {
+                errorBox.textContent = String(error);
+              }
+            },
+          },
+        );
+      }
+
+      refresh().catch((error) => {
+        app.textContent = "";
+        errorBox.textContent = String(error);
+      });
+    </script>
+  </body>
+</html>

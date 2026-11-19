@@ -1,0 +1,531 @@
+# Decisions Log — WASM Overview Audit & Rewrite
+
+The research → brainstorm → decide record behind the rewritten `overview.md`. Each decision cites audit rows (see `audit.md`) and external evidence (`.kimchi/docs/wasm-overview-external-verification.md`). Status markers: ✅ decided · 🔁 revisit trigger noted.
+
+## D1 — Document framing: corrected fork blueprint ✅
+- **Options:** (a) corrected fork blueprint, (b) current-state doc + roadmap, (c) research dossier.
+- **Decision:** (a) — keep the original's explicit purpose ("complete project blueprint consolidating repository workflow, core runtime architecture, Android Tauri v2 integration, browser WASM adapters, Cloudflare edge offloading, and open-source reference repositories") with every hypothesis fact-checked.
+- **Rationale:** The user requirement is to preserve "the exact purpose and intention of the original overview (we must not drop any feature)". (b)/(c) would change the document's genre, violating that requirement.
+- **Rejected:** (b), (c) — both shift purpose away from a go-forward build plan.
+- **Mechanism:** plan-vs-existing separation is structural — sections describing existing upstream code carry `file:line` evidence; sections describing fork work are labeled **Plan** and cite verified platform capabilities only. (Audit framing rows 2.1, 2.7, 2.10.)
+
+## D2 — Correction policy: correct to reality, keep intent ✅
+- **Options:** (a) correct to reality, (b) keep as labeled plan, (c) drop disproven content.
+- **Decision:** (a), with nuance: where the original stated unbuilt work as current fact (SQLite, trait names, dual-target builds), the *factual error* is corrected while the *intent* (the fork plan) survives, explicitly labeled.
+- **Rationale:** "Correct to reality" without the nuance would delete the blueprint's roadmap; (b) alone would leave false statements uncorrected; (c) violates the no-drop requirement.
+- **Applied at:** storage corrections (2.9, 3.12), trait-name corrections (2.8, 4.2, 4.8, 4.11), dual-target compilation (2.7), TLS (3.2), conch uutils (5.3), browser-fs OPFS→File System Access API (5.9), DO "alive 24/7" → "reachable 24/7" (4.10).
+
+## D3 — Storage story: JSON files / DSQL / Dynamo today; SQLite only at the edge ✅
+- **Evidence:** daemon persists per-thread JSON files (`infinity-daemon/src/memory_store.rs:3-16`); Lambda uses Aurora DSQL + DynamoDB (`infinity-agent-lambda/src/conversation_history.rs:16`, `state_store.rs:9`); zero `sqlite` in `crates/`.
+- **Decision:** the rewrite says exactly this. "Bundled SQLite on Android" is dropped as a claim about today; if the fork wants Android SQLite, that is a future store-trait implementation choice (`ConversationStore`/`StateStore`, `infinity-agent-core/src/traits.rs:27,223`). SQLite appears only where verified: Cloudflare Durable Objects / Agents SDK.
+- **Rejected:** keeping "local SQLite" (false for daemon/Lambda); inventing a SQLite migration plan (out of scope).
+
+## D4 — Trait naming: real traits stay real; fork traits are named as planned ✅
+- **Evidence:** `McpTransport` exists but is `request(method, params)` (`infinity-mcp-bridge/src/lib.rs:52-59`); `SandboxExecutor`/`AgentCoordinator`/`SliceRunner` do not exist; real seams are `ConversationStore`, `StateStore`, `InputSender`, `DeferQueue`, `ModelSource`, `ThreadObserver`, `Tool` (`infinity-agent-core/src/traits.rs`, `tools/mod.rs:68`), `ModeProvider`/`SandboxBackend`/`MetadataStore` (`sandbox-core`).
+- **Decision:** the rewrite's §4 table keeps the four original *roles* (sandbox executor / MCP transport / coordinator / slice runner) but grounds each cell: role → existing code seam (cited) → planned fork trait. Planned names (`SandboxExecutor`, `AgentCoordinator`, `SliceRunner`) are retained as the fork's proposed interfaces, explicitly marked "to be defined", since the original's vocabulary is reasonable and dropping it would be a needless rename debate now.
+- **Rejected:** asserting the planned traits as existing (fabrication); renaming roles to invented terms (drops original intent).
+
+## D5 — RAP description: keep verified mechanics, fix vocabulary ✅
+- **Evidence:** callback URL, `group_id`, `CallbackClient`, four callback types (`rap-protocol/src/lib.rs:51-52,241-243,289-357`); RAP spec exists on the docs site (README).
+- **Decision:** describe RAP as connectionless HTTP POST invocations with callback URLs and typed callbacks (`tool_result`, `user_choice`, `subscription_event`, `view_update`) — all verified. Replace "wakes hibernating agents via synthetic events" with the delivery-into-runtime phrasing (audit 2.6).
+- **Rejected:** keeping "synthetic events" (not the protocol's vocabulary).
+
+## D6 — Wake mechanisms for the browser slice runner: Push first, Background Sync demoted ✅
+- **Evidence:** Background Sync is Chromium-only, non-standard, negative Firefox standards position ("very unlikely to ever become Baseline"); Periodic Sync is Chrome-only + installed-PWA-only + experimental; Web Push and Web Locks are Baseline.
+- **Decision:** the rewrite's browser wake path = Web Push + server-initiated RAP callbacks (baseline), with Web Locks for cross-tab coordination; Background Sync kept as a Chromium-only enhancement with an explicit portability warning. No standard SW "timer alarms" claim — edge timer wakes are Cloudflare DO alarms (verified).
+- **Rejected:** presenting Background Sync as the primary wake mechanism (audit 4.12).
+
+## D7 — Cloudflare edge story: verified as-is, one correction ✅
+- **Evidence:** Durable Objects hibernation (wake-on-event, SQLite-backed), Agents SDK (durable identity, SQL storage, Scheduler, MCPClientManager), Containers public beta, Sandbox SDK ("a sandbox is a Durable Object and the Container it starts").
+- **Decision:** keep all four §4 remote-adapter cells; correct "keeps the coordinator alive 24/7" → "reachable 24/7, waking on events at near-zero idle cost" (audit 4.10) — this matches how DO hibernation actually bills and behaves.
+
+## D8 — Reference repos: ranked with corrected descriptions ✅
+- **Verdicts:** wasmsh all-but-verified (88 utilities, Python 3.13, capability VFS, step budgets); agent-sandbox fully verified (80+ tools, Boa, SSRF-safe fetch, snapshots, resource limits); conch brush-based but **no uutils** (claim dropped); browser-fs is File System Access API **not OPFS** (corrected); web-container content verified but **1-commit, 0-star** → reference-only.
+- **Decision:** §5 keeps all five repos in the original order, each with a corrected description and a "fitness for infinity-wasm" line. wasmsh remains the primary sandbox candidate; agent-sandbox the design reference for tool schemas/change-tracking; conch the bash-compatibility fallback; web-container the OPFS/bundling *reading* reference (explicitly flagged unmaintained); browser-fs a candidate FS adapter (noting its API basis and Worker requirement).
+- **Rejected:** removing any repo (violates no-drop); adding replacements not requested.
+
+## D9 — Toolchain standardization for the fork (new §8) ✅
+- **Evidence table:** research note §4 (all tools verified 2026-11-17).
+- **Decision:** the fork's standard loop is:
+  - **Build:** `rustup target add wasm32-unknown-unknown`; `wasm-pack build` (0.15.1, now under the wasm-bindgen org, actively maintained); `wasm-bindgen` for JS interop.
+  - **Dev loop:** `trunk serve` (watch + auto-reload) for app-style iteration; `wasm-pack`/raw `wasm-bindgen` output for library-style crates consumed by the Tauri webview or a bundler.
+  - **Inspect/profile:** `wabt` (`wasm2wat`, `wasm-objdump`, `wasm-validate`); `twiggy top` for size — with an archived-upstream warning (crates.io 0.8.0 still fine).
+  - **Debug:** `console_error_panic_hook` for readable panics; DWARF path (`dwarf-debug-info = true` + `-C debuginfo` + Chrome "C/C++ DevTools Support (DWARF)" extension, Chrome 114+) for source-level Rust debugging.
+  - **Test:** `wasm-bindgen-test` via `wasm-pack test --headless chrome`.
+- **Rejected:** presenting twiggy/wabt without maintenance caveats; skipping the DWARF extension requirement (it's still needed despite Chrome 114+ defaults for wasm).
+
+## D10 — chrome-devtools-mcp: adopt as the agent-facing debugging layer ✅
+- **Evidence:** official ChromeDevTools project (57.7k★, Apache-2.0); MCP server + CLI; performance traces, network, screenshots, console with source-mapped stack traces; `npx -y chrome-devtools-mcp@latest`; skills + plugin installs (Claude Code, Copilot/VS Code, Gemini CLI, `.kimi-code-plugin` present); `--headless/--isolated/--slim` flags; Android debugging doc.
+- **Decision:** adopt it as the coding-agent tool for the infinity-wasm build→load→debug loop: the agent builds, opens the served page, reads console/source-mapped Rust traces, inspects network (RAP/MCP calls), records performance traces, and iterates unattended. Wire into the section as install + config snippet + concrete WASM-debug workflow.
+- **Scope note (user feedback):** it is one piece of the general tooling section (D9), not the whole section.
+- **Rejected:** puppeteer-playwright-MCP alternatives (not requested; chrome-devtools-mcp is official and current).
+
+## D11 — TLS: state the real config; rustls is a planned switch ✅
+- **Evidence:** `reqwest` = `default-tls` (native-tls → OpenSSL on Linux) at `Cargo.toml:45`; rustls enters via `sqlx` `tls-rustls-aws-lc-rs` (`Cargo.toml:59`).
+- **Decision:** the rewrite stated the configuration as understood at audit time and listed a rustls switch as a possible work item (audit 3.2).
+- **Correction (2026-11-17, Phase 2 research):** the premise was wrong. reqwest **0.13** redefined `default-tls = ["rustls"]` (aws-lc-rs provider + `rustls-platform-verifier`), so the workspace is already rustls-only and there is **no OpenSSL**. The *original overview's* "rustls (no OpenSSL)" was accurate; audit rows 2.7/3.2 are corrected accordingly. The real Android work item is toolchain wiring — `aws-lc-sys` needs the NDK clang via `CC_<target>`/`AR_<target>`/linker env, and `rustls-platform-verifier` uses `jni`. **No TLS feature switch is planned.**
+
+## D12 — WhatsApp / Android control rows: kept as labeled, unverified-by-nature plan ✅
+- **Rationale:** these describe *intended capabilities* of a not-yet-written app layer. They cannot be verified against this repo and some (WhatsApp automation) are inherently implementation-dependent.
+- **Decision:** keep the rows (no-drop), label the section "Android plan (not yet built)", and restrict verified statements to the underlying platform APIs (Tauri Kotlin plugins, Shizuku Binder IPC, WebView/WebViewClient, Foreground Services, NotificationListenerService, ContactsContract, Scoped Storage) — all confirmed via official sources. Shizuku's specific primitives (`newProcess`/uiautomator/`am`) are marked implementation-time checks (audit 3.8).
+
+## D13 — Deliverables & placement ✅
+- **Decision:** three artifacts in `docs/docs/WASM/`: `audit.md` (this repo, claim-by-claim + preservation map), `decisions.md` (this file), and the rewritten `overview.md` (in place). Original backed up at `.kimchi/docs/overview-original-backup.md`. None wired into `docs/sidebars.ts` (docusaurus autogenerated dirs cover only infinity-code/infinity-runtime/rap) — publishing to the site is a possible follow-up, out of scope here.
+- **Rejected:** single-file output (loses the audit trail); putting working notes in the project tree (harness rule: Documents dir for transient research).
+- **Updated (post-audit):** the artifact set has since grown to include `PROGRESS.md` (status tracker) and `implementation-plan.md` (Phases 0–4 chunk spec); D13's placement rationale applies to both.
+
+## D14 — WASM build readiness: compiler-first audit; gate, don't rewrite ✅
+- **Trigger (user):** the audit must also capture the work required for a successful `wasm32-unknown-unknown` build of this project — not just verify the overview's claims.
+- **Method decision:** the definitive evidence is the compiler — `cargo check --target wasm32-unknown-unknown` per crate (7 crates swept 2026-11-17; 1 green, 6 red) — corroborated by API greps (`std::fs/process/thread`, `tokio::net/time/fs`) and primary sources (rustc platform doc, tokio #7510/#7550/#8194, getrandom docs). Dep-graph reasoning alone was rejected as insufficient (it cannot see `Send`-bound clashes like rap-protocol's E0277s).
+- **Strategy decision — feature-gate per target, keep one core:** tokio `net`/`process`/`fs` and native-only impls (git/jj/rg, `which`, `tempfile`, `dirs`, `StdioMcpTransport`) move behind `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` / `#[cfg]` gates; browser equivalents live in `infinity-wasm` (§4/§5 of the overview). Precedent already in-repo: `[target.'cfg(unix)'.dependencies] nix` in `sandbox-core`. The proven-good pattern to replicate is `infinity-provider-protocol` (only wasm-green crate: everything heavy behind optional features).
+- **Rejected alternatives:** (a) dropping tokio from the core for a wasm-native executor — unnecessary churn: tokio's `sync,macros,io-util,rt` (current-thread) are wasm-usable today; (b) pinning community forks (utooland/tokio, tokio-fs-ext, wasmtimer as tokio replacements) — acceptable as *point* solutions behind gates (e.g. wasmtimer for timers), not as workspace-wide dependency forks; (c) forcing the whole workspace (daemon/lambda/servers) to compile for wasm — out of scope: those are resident/server binaries; the browser/edge runtimes replace their native I/O surfaces.
+- **Notable findings folded into overview §9:** reqwest-on-wasm futures are `!Send` (needs a transport seam or bound audit in `rap-protocol`); rap-client's RAP callback endpoint is a native TCP/hyper server and cannot exist in a browser (edge-hosted callback endpoint or SSE/WS/polling ingestion); getrandom/uuid v4 needs the documented `wasm_js` backend build config (cheap); `tokio::time` panics and `std::fs` errors at runtime on wasm-unknown even after compile fixes; only `infinity-provider-protocol` compiles green today.
+- **Evidence:** audit.md Appendix C; research note §6; overview §9 (per-crate table + work items W1–W10 + Phase 0 in §7).
+- **Resolution for `sandbox-core` (chunk 0.6, 2026-11-17):** gating uses a **default-on `native` feature** (not automatic target cfg, per user decision), covering `server`/`git`/`jj`, `SpawnedCommand`/`SandboxBackend::spawn_command`, and 8 native-only dependencies. Consequences recorded in `docs/docs/WASM/README.md`: browser consumers must pass `default-features = false`, and the readiness gate special-cases this crate with `--no-default-features` (otherwise the default build would keep the gate red and hide regressions). `which` 8.0.2 turned out not to compile for wasm at all (`E0046: missing is_valid_executable`), not merely to be unused.
+- **Resolution for `infinity-mcp-bridge` (chunk 0.7, 2026-11-17):** the same default-on `native` feature gates the stdio transport. Gating it alone was insufficient: `McpTransport` needed the cfg-gated `Send`/`?Send` treatment, `McpTransportFactory` needed two aliases (bounds cannot be cfg'd inside a type alias), and `McpTool::execute` needs `tokio::task::spawn_local` on wasm. **Phase 3 prerequisite:** the browser runtime must execute inside a `LocalSet`, otherwise spawned tool-result delivery panics.
+
+## D15 — Host-provided HTTP: keep the `HttpClient` seam; one impl per host ✅
+- **Question (user):** can the host environment plug in its own HTTP — browser brings fetch, Tauri v2 brings …?
+- **Answer: yes, and the architecture already does this.** `HttpClient` (`rap-client/src/http.rs:8`) + `ToolsetCache` are injected today (reqwest impl ships; Lambda injects its own `RapHttpClient`; tests inject mocks — `rap_tool.rs:227`, `builder.rs:49`); `CallbackClient` (`rap-protocol/src/lib.rs:241`) is the second seam; agent-core consumes `H: HttpClient` generically (`system/config.rs:38-40`).
+- **Decision:** keep the seam as the single HTTP contract; add one impl per host — Tauri v2 = native reqwest(+rustls) in the app process (optionally `tauri_plugin_http::reqwest` re-export; the plugin's scope-enforced fetch covers frontend-initiated calls), browser = fetch via reqwest-wasm/gloo (unblocked by W2 — candidates: a contained `SendWrapper` adapter, or `#[async_trait(?Send)]` bounds if no daemon path requires `Send`, as in agent-core's system traits; implementation-plan §0.2 records the choice), Workers = reqwest-wasm (Cloudflare-documented) or `worker::Fetch`. Full matrix: overview §9.4.
+- **Rejected:** hard-coupling all hosts to reqwest's native stack (breaks browser/Workers — audit Appendix C findings); moving LLM streaming onto `HttpClient` (streaming belongs to the provider seam; this trait is status-POST/GET-bytes for RAP).
+- **Evidence:** research note §7 (Tauri plugin docs, Cloudflare crates doc, in-repo trait inventory).
+- **Resolution (2026-11-17, chunks 0.2/0.3):** implemented as **cfg-gated trait definitions**, not a wrapper. Native keeps `#[async_trait]` with `Send + Sync`; wasm uses `#[async_trait(?Send)]` without those bounds. Request bodies live in shared inherent methods, so each request is implemented once.
+  - **Why not the `SendWrapper` candidate:** the `!Send` value is *inside* reqwest's future (`JsFuture` holds thread-local JS objects) — wrapping the client cannot make the future `Send` without `unsafe`, which is unjustified on a single-threaded runtime.
+  - **Why not unconditional `?Send`:** the axum-based servers (`sandbox-core` HTTP server, `rap-steering-server`) require handler futures to be `Send`; dropping the bound globally fails to compile them.
+  - **Verified:** `rap-protocol` and `rap-client` green for `wasm32-unknown-unknown`; `cargo check --workspace --all-targets` green on native.
+  - **Follow-on:** the same pattern must be applied to `Tool`, `InputSender`, and the store traits in `infinity-agent-core` (chunk 0.5) — the source of its 15 remaining wasm errors.
+
+## D16 — Fork scope: crates are the product; `apps/` are consumer archetypes ✅
+- **Correction (user):** `apps/local-first/android` and `apps/cloudflare-worker` are not fork-workspace directories — they are archetypes for any codebase that consumes the fork.
+- **Decision:** the fork's deliverable surface is **crates** (core, `infinity-wasm`, `infinity-remote-adapters`, sandbox traits). Android Tauri apps and Cloudflare workers are built by consumers on top of those crates; the blueprint documents the archetypes (§3 capability table, §6 layout note, §7 build-order items 2/4) as reference implementations that double as integration tests for the crate APIs.
+- **Rationale:** keeps the fork a framework — no app concerns (signing, store deployment, wrangler accounts, per-consumer capabilities/scopes). Consumers own their app shells, permission configuration, and deployment topology.
+- **Rejected:** shipping `apps/` as fork workspace members (couples the framework to one app shape and one deployment); dropping the archetypes from the blueprint (they are the integration documentation consumers need).
+- **Evidence:** audit §6 rows 6.2 (corrected), 6.3/6.4 (reframed), Preservation Map §6 row, Appendix C scope list; overview §3 intro, §6 scope note, §7 build-order items 2/4, §9.3 out-of-scope note.
+
+## D17 — Cloud-optional by design: full-featured local operation, edge as accelerator ✅
+- **Requirement (user):** the runtime must run full-featured — including long-running tasks — without depending on a cloud worker; the cloud worker is optional, for heavy-duty / very-long work. Verify the possibility **before** refactoring.
+- **Verification (done first, 2026-11-17):** (1) Android long-running = foreground service `START_STICKY` via Tauri v2 background-service plugin (verified; Android 15 FGS timeout policies are the very-long caveat); (2) browser long-running = SharedWorker slices while the tab is open + hibernate/resume via the native slice model — background-timer throttling (Chrome M87+, ~1/min when hidden) delays wakes without breaking invariants; (3) LLM calls go device→provider directly (Anthropic CORS header verified; OpenAI `ACAO: *` — empirical matrix 2026-07); (4) RAP callback URLs are host-agnostic — the Android app hosts callbacks locally (`callback_server.rs:16-18`) and the user's own `infinity-daemon` is a non-cloud always-on endpoint; (5) local tool paths exist on both hosts (Shizuku native / wasmsh+OPFS).
+- **Decision:** reframe the blueprint intro (cloud = optional accelerator, never a requirement); add overview §2.5 with the verified capability/boundary table; mark the §10.1 relay idea optional with the self-hosted-daemon alternative. All "route heavy tasks to Cloudflare" phrasing stays conditional.
+- **Rejected:** making the edge a required backbone (violates the requirement); claiming a browser can receive events while closed with zero infrastructure (false — needs the user's own always-on endpoint, or deferral to next open).
+- **Evidence:** research note §8; overview §2.5.
+
+## D18 — `SliceTimer` promotion: deferred to Phase 3 (runtime, not compile) ⏸
+- **Original plan:** chunk 0.5 would promote the Lambda timer abstraction (`WakeupScheduler`/`SleepTool`, `infinity-agent-lambda/src/tools/sleep.rs:46-115`) into a core `SliceTimer` trait with tokio / wasmtimer / DO-alarm impls.
+- **Discrepancy found (2026-11-17, chunk 0.5 research):** `tokio::time` **compiles** for `wasm32-unknown-unknown` and only panics when used at runtime (tokio #7510); `std::fs` likewise compiles and errors at runtime; `event_processor.rs:5065`'s `tokio::time::Instant` is inside `#[cfg(test)]`; `system/local/` has no process/net/thread usage and compiles. None of them blocked the wasm build — the only compile blockers were the `Send` bounds.
+- **Decision (user, 2026-11-17):** chunk 0.5 is scoped to **compile-green only** (the `Tool` cfg-gating). `SliceTimer`, the `std::fs` config-path work and optional `system/local` gating move to **Phase 3**, where the browser runtime actually needs a wake mechanism.
+- **Numbering stays reserved:** D20 = `HostCtx` (chunk 1.4), D21 = optional edge relay (chunk 4.x).
+- **Risk if forgotten:** `TokioSleepTool` / `TokioSleepUntilTool` / `SleepUntilEventOrInputTool` would panic if invoked in a browser — tracked as W5 in `PROGRESS.md` §3 and in the revisit triggers below.
+
+## D19 — Phase 1 scope: additive-only; coordinator/runner extraction deferred ✅
+- **Finding (research, 2026-11-17):** three of the five planned Phase 1 chunks did not match reality.
+  1. **Chunk 1.5 is already implemented upstream** — `HttpMcpTransport` sends `accept: application/json, text/event-stream`, tracks `mcp-session-id` and parses `data:` frames. The chunk became "add tests for that path".
+  2. **`SliceRunner` would wrap `AgentSystem::step`**, which already exists (`builder.rs:453`); the Lambda crate that would be refactored has **0 tests** and cannot be exercised locally without AWS.
+  3. **`AgentCoordinator` would wrap a 1,918-LOC `SessionManager`** that is `Rc`/`!Send` and `LocalSet`-bound (14 tests), while Phase 3 (SharedWorker) and Phase 4 (Durable Objects) each need a *different* shape.
+- **Decision (user):** Phase 1 is **trimmed** — 1.1 `SandboxExecutor` (additive, portable), 1.4 `HostCtx` **without** the deferred `SliceTimer`/`CallbackIngest` slots, and 1.5 as tests only. The `SliceRunner` / `AgentCoordinator` extractions move to Phase 3/4, where a second implementation forces the correct abstraction and the code is testable.
+- **Rejected:** all five chunks as written (unverifiable AWS refactor, abstraction guessed from one implementation); only 1.1 (leaves no assembly point for Phases 2–3).
+- **Consequence:** overview §4 still lists the four adapter roles, but only `SandboxExecutor` and `McpTransport` are realised in Phase 1; `SliceRunner` / `AgentCoordinator` remain planned names until Phase 3/4.
+
+## D20 — `HostCtx` lives in a new `infinity-host` crate ✅
+- **Question:** where to put the host capability bundle, given its pieces live in crates that do not depend on each other (`rap-client`, `infinity-agent-core`, `sandbox-core`, `infinity-mcp-bridge`).
+- **Decision (user):** a new fork-only crate `crates/infinity-host` (`publish = false`) that depends on all four and forwards a default-on `native` feature to `sandbox-core` and `infinity-mcp-bridge`.
+- **Rejected:** in `infinity-agent-core` without the sandbox slot (it would restate `AgentSystemBuilder<C, S, M, H>` and still omit sandbox/MCP); in `infinity-agent-core` with a `sandbox-core` dependency (couples the runtime core to the sandbox crate and drags its feature surface into every agent-core consumer).
+- **Shape:** a generic bundle `HostCtx<C, S, H, T, E>` with accessors, `with_mcp_transport` and `into_parts`; MCP is `Option<McpTransportFactory>` because not every host exposes MCP servers. It deliberately **excludes** `ThreadConfigSource` — that trait is generic over the system's `M`/`H` and holds `Rc<dyn Tool<M>>`, so it is per-system, not per-host — and the deferred `SliceTimer` / `CallbackIngest` slots (D18).
+- **Verified:** 2 tests (capability access, optional MCP + `into_parts`), compiles for `wasm32-unknown-unknown` with `--no-default-features`, clippy clean.
+
+## D21 — Android TLS verifies against embedded Mozilla roots ✅
+- **Question:** how should HTTPS work in the Android archetype, given `reqwest` 0.13's `rustls` feature (pulled in by `rig-core`'s `reqwest-rustls`) always uses `rustls-platform-verifier`?
+- **Finding (measured on device):** without that crate's Android initialization the handshake **stalls** — no error, no log line, no `AgentEvent::Info`. Two probes timed out at 60 s with `reply: ""` and `notes: []` while the same key/model answered `HTTP 200` from the host in 2 s. The crate needs `init_with_env`/`init_with_runtime` (JNI `Env` + Android `Context`) **and** a Kotlin AAR in the Gradle build; upstream confirms both requirements ([reqwest#2966](https://github.com/seanmonstar/reqwest/issues/2966), [tauri#13267](https://github.com/tauri-apps/tauri/issues/13267)).
+- **Decision:** build a `rustls::ClientConfig` from `webpki-roots` compiled into the binary, hand it to `reqwest` via `use_preconfigured_tls`, and inject the client into rig with `.http_client(...)`.
+- **Rejected:** (a) shipping the AAR + `init_with_env` — the AAR lives in `gen/android`, which is regenerated and git-ignored, so every consumer would have to redo it; (b) `targetSdkVersion 28` to dodge the verifier — not viable for a current app; (c) plain HTTP — unacceptable for a real key.
+- **Consequence:** the platform trust store is bypassed, so user-installed and corporate CAs do not apply. This is the same posture as the browser target, where no OS store exists either. Apps that need private CAs must ship the AAR and initialize the verifier before the first request — recorded in `apps/local-first/android/README.md`.
+- **Verified:** `chat.json` → `{"model":"gemma-4-31b","reply":"infinity-on-android-llm","notes":[],"timed_out":false}`, ~10 s, and `cargo check --target aarch64-linux-android` clean.
+
+## D22 — The Android plugin lives under the app, not in `crates/` ✅
+- **Question:** `tauri-plugin-infinity-android` was scaffolded into `crates/`; should it stay there?
+- **Decision (user):** move it to `apps/local-first/android/crates/tauri-plugin-infinity-android`.
+- **Why:** it is an implementation detail of one archetype, not a crate the fork publishes. Inside the app it becomes a member of the app's own workspace, so it shares `target/` and `cargo fmt --all` instead of duplicating a build tree, and the fork's workspace never pulls a desktop `tauri` build (which would need `webkit2gtk` on Linux CI).
+- **Mechanics:** the app declares `path = "crates/tauri-plugin-infinity-android"`; the root `exclude` stays `["apps/local-first/android"]`; the generated `gen/android/tauri.settings.gradle` picks the Android library up automatically from the plugin's `build.rs` (`android_path("android")`).
+- **Verified:** `cargo metadata` lists both packages in the app workspace; APK rebuilt after the move; all three probes still pass on the device, and the Gradle settings file points at the new path.
+
+## D23 — On-device tools run as Wasm modules, not extracted executables ✅
+- **Question:** how do tools execute inside the Android app, given that Android 10+ denies `exec` on files in the app's writable data directory for apps targeting API 29+?
+- **Options:** (A) ship executables as `jniLibs/…/lib*.so` and execute them from `nativeLibraryDir` (executable because the directory is labelled `apk_data_file`), or (B) embed a Wasm engine and interpret `.wasm` read from app data.
+- **Decision:** B by default; A stays as the escape hatch for binaries that cannot be compiled to Wasm.
+- **Measured cost (aarch64-linux-android, release, `llvm-strip`, empty `cdylib`):** 308 KB baseline vs 1.44 MB with `wasmi` 1.x (`Engine` + `Module::new`) — **+1.16 MB**.
+- **Rejected as default:** `wasmtime` — the official minimal C API build is 2.1 MB, the Rust crate is larger, and its JIT pages were not validated on this device. `wasmi` is an interpreter: no executable memory, deterministic, and its fuel metering matches the slice model.
+- **Consequences:** (1) tools must be distributed as `.wasm`, so tools that need a real OS (git, package managers, preview servers) fall back to option A or to the optional edge; (2) executables shipped via option A still need `patchelf --set-rpath '$ORIGIN'` plus their shared libraries, which is documented in `apps/local-first/android/README.md`; (3) `SandboxExecutor` is the seam that keeps this choice out of the core.
+
+## D24 — WhatsApp Web is shown, never automated ✅
+- **Question:** the blueprint promised "WhatsApp control" through an embedded WebView with JS injection. Does that work, and should the fork build it?
+- **Verified on device (2026-11-17):** an overlay `WebView` with a desktop user agent loads `https://web.whatsapp.com` to `readyState: complete`, with `canvasCount: 1` (the QR), plus `serviceWorker`, `indexedDB` and `subtleCrypto` all present, and no UA redirect. `screencap` shows the genuine login screen. So the *mechanism* is sound.
+- **Not verified, and deliberately so:** a paired session. Linking requires a human to scan the QR with the phone, and nothing after that was built.
+- **Legal constraint (primary sources):** WhatsApp's Help Center article "About temporarily banned accounts" names "an unofficial version of WhatsApp" and "scraping" as ban triggers, and the Messaging Guidelines prohibit "use of unofficial clients … or automation". The consequence lands on the user's own number, not the developer's.
+- **Decision:** the fork may display WhatsApp Web as a read-only view; it ships no DOM injection, scraping or message automation. The probe is opt-in through a `whatsapp-probe` marker file so the overlay never appears during normal runs.
+- **Rejected:** shipping a scraper or auto-responder (ToS violation with account-ban risk); an unofficial API (same violation, and it still needs a QR-paired session); WhatsApp Cloud API (the supported path, but it requires a business account and Meta-hosted infrastructure — incompatible with a cloud-optional local app).
+
+> **Revision (2026-11-17, user decision).** After being shown both primary sources, the user chose **full automation (read + send)** for personal use, accepting that any ban lands on their own number. The view-only boundary above no longer describes the shipped scope; D25 records the automation design and the guardrails that keep it opt-in and local. The factual findings in this entry stand: automation violates WhatsApp's terms, and nothing here makes it safe.
+
+## D25 — WhatsApp automation is opt-in, local and explicitly unofficial ⚠️
+- **Context:** D24 verified that the client boots, and the user chose full automation (read + send) knowing the terms violation and ban risk.
+- **Design:** the WebView stays the only WhatsApp client; automation is JS injected over `evaluateJavascript` on a timer, with results written to the app data dir and later delivered through RAP callbacks.
+- **Guardrails:** off unless `whatsapp-config.json` exists (pushed at runtime, never committed); no credentials or phone numbers in the repo; the pairing code is written locally for the user to type into WhatsApp; no bulk sending and no contact harvesting — the prototype reads only the conversation the user has open.
+- **Reality check:** pairing cannot be automated. The phone's WhatsApp must approve the link, so the flow is: enter the number → read the 8-character code → the user types it into WhatsApp → the session persists in IndexedDB.
+- **Consequence:** the fork's blueprint must not market this as a supported WhatsApp integration. The supported path for compliant automation remains the official Cloud API (`official_api` option), which is cloud-bound and therefore outside the cloud-optional promise.
+
+## D26 — WhatsApp Web automation: what actually works ⚠️
+- **Context:** D25 committed to automation. This records the measured mechanics, so nobody re-derives them.
+- **Linking:** the pairing-code flow works (`Link with phone number instead` → number → 8-character code → typed into WhatsApp on the phone). The code renders one character per element, so it must be matched on whitespace-stripped text.
+- **The link is fragile in one specific way:** restarting or reinstalling the app mid-link kills the handshake. Measured: a rebuild during the sync produced `Logging out` then `Couldn't link device. Keep WhatsApp open on your phone when your device is linking.` Do verification over CDP (§ below), never by restarting.
+- **Session persistence works:** after a completed link, a restart restored the chat list from IndexedDB (21 rows) with no re-pairing.
+- **Synthetic clicks do not work.** `element.click()` and dispatched `MouseEvent`s on a chat row do nothing. Trusted input does: CDP `Input.dispatchMouseEvent` opened the conversation, so production uses `WebView.dispatchTouchEvent` with real `MotionEvent`s at `CSS px × displayMetrics.density`.
+- **Selectors that actually match:** chat rows `#pane-side [role="row"]` with `data-testid="list-item-N"` and `cell-frame-title`; messages `#main [data-testid^="conv-msg-"]` (`role="row"` inside `#main` matches only empty layout rows); composer `#main div[contenteditable="true"]`; send `button[aria-label="Send"]`; search `[aria-label="Search input textbox"]`; typing via `document.execCommand('insertText', …)`.
+- **Rendering is asynchronous:** the message panel appears after the tap, so reads retry until more than one message exists.
+- **Detection boundary:** no spoofing or evasion is implemented. WhatsApp's guidelines name unofficial clients, scraping and automation as ban triggers; the mitigations here are rate limits, dry-run-by-default (`whatsapp_send` drafts unless told to send), and stopping on warnings. See D24's revision for the risk the user accepted.
+- **Status:** `whatsapp_state` ✅ (chat list, row count); `whatsapp_read` expression ✅ over CDP (23 messages / last 5 returned); the in-app retry path ⏳ unverified; `whatsapp_send` ⏳ implemented, dry-run untested.
+
+## D27 — Browser stores need `?Send` propagation, not just relaxed trait bounds ⏸️
+- **Question:** can an IndexedDB-backed `ConversationStore`/`StateStore` be dropped in by relaxing the traits' `Send + Sync` supertraits on wasm (the D15 pattern)?
+- **Attempted:** introduced `StoreBounds` (`Send + Sync + Clone` natively, `Clone` on wasm) and made both store traits extend it.
+- **Measured result:** the wasm build fails. `event_processor.rs:209` and `system/local/router.rs:338` cannot share `C`/`S` across threads, because the enclosing async functions require `Send` futures; holding `&C` across an `.await` then needs `C: Sync`. Relaxing only the supertraits does not relax the futures.
+- **Why:** `idb`/`wasm-bindgen` handles are `!Send`, and their futures are `!Send` too. A `SendWrapper` around the handle does not help — the `JsFuture` itself is `!Send`.
+- **Conclusion:** the browser store is blocked on making the core's async paths `?Send` on wasm (cfg-gated `async_trait(?Send)` plus `spawn_local` at the four call sites), which is a Phase 3 refactor, not a trait tweak. Reverted the change; both targets are green again.
+- **Options for the refactor:** (a) propagate `?Send` through the core's async fns on wasm; (b) run the browser runtime inside a `LocalSet` and keep `Send` only where genuinely required; (c) `SendWrapper` — rejected, since it cannot fix `!Send` futures.
+- **Ordering:** Phase 4 (Cloudflare worker, `infinity-remote-adapters`) does not depend on browser storage and can proceed first.
+
+## D28 — SQLite-Wasm + OPFS is the browser storage target, and it was proven now ✅
+- **Question (user direction):** IndexedDB was the cheap default, but SQLite+OPFS is where the consuming browser app is going. Deferring it would have meant designing stores we already know will be replaced.
+- **Proven, not assumed:** a dedicated-worker spike (`apps/browser-storage-spike`) with `@sqlite.org/sqlite-wasm` 3.54.1-build1 in headless Chrome. First load inserted 100 rows; a reload read 100 and inserted 100 more — `persistence: PASS (100 → 200)`.
+- **Measured cost:** `sqlite3.wasm` is **879,084 B raw / 407,552 B gzip**; the JS API `index.mjs` is another 656,872 B. That is a real addition on top of `wasmi`'s ~1.16 MB, and it is the price of the storage model the app will actually use.
+- **Hard constraints:** `createSyncAccessHandle()` is exposed only in a **dedicated worker**; one writer per file, so multi-tab needs a SharedWorker electing an active tab; `navigator.storage.persist()` must be called from the main thread; OPFS is still quota-managed and can be cleared. Browser floor: Chrome 102+, Firefox 111+, Safari 15.2+ (sync handles) / 16.4+ (full OPFS).
+- **Consequence:** the browser store will be a `SqliteConversationStore`/`SqliteStateStore` behind the existing traits, not an IndexedDB one. The D27 `?Send` blocker applies to either engine: it is about JS handles and the core's `Send`-bound futures, not about storage choice.
+- **Rejected:** IndexedDB as the target engine (cheap, but the app would outgrow it); SQLite on the main thread or in a shared worker (API does not exist there); Asyncify builds (roughly double the wasm for no need here).
+
+## D29 — No Wasm interpreter in the browser; the browser *is* the runtime ✅
+- **Question:** does the browser bundle need `wasmi` for the sandbox, as Android does?
+- **No.** A browser already hosts WebAssembly. A tool module is instantiated with the platform `WebAssembly` API and isolated by the runtime: separate linear memory, only the imports we pass (no `fetch`, no DOM, no filesystem), and a dedicated Worker so a runaway module is killed with `terminate()` instead of freezing the tab.
+- **What the browser engine does not give us:** fuel metering and determinism (NaN canonicalization, threads). The policy is therefore a wall-clock timeout + memory cap, not instruction counting.
+- **Consequence:** the +1.16 MB figure measured for `wasmi` on `aarch64` belongs to **Android only** (D23), not to the browser bundle. `wasmi` is still the smallest *memory-safe* option there, but only if tools ship independently of the app.
+- **Android ladder (measured or reasoned):** compile tools into the app (0 KB) → native binary from `nativeLibraryDir` (fragile, per ABI) → `wasmi` (+1.16 MB, Rust, fuel metering) → `wasm3`/WAMR MicroRuntime (smaller, C, thinner maintenance). The last is rejected for untrusted bytecode unless APK size becomes a hard constraint.
+
+## D30 — Browser storage engine: `wa-sqlite` sync build ✅ (extends D28)
+- **Measured (this repo, 2026-11-17):**
+
+| Package | wasm raw | wasm gzip | JS |
+|---|---|---|---|
+| `@sqlite.org/sqlite-wasm` 3.54.1 | 879 KB | 398 KB | 641 KB |
+| **`wa-sqlite` 1.0.0 (sync)** | **546 KB** | **267 KB** | ~42 KB glue |
+| `wa-sqlite` 1.0.0 (Asyncify) | 1.1 MB | — | — |
+
+- **Decision:** use `wa-sqlite`'s **sync** build in a dedicated worker. The Asyncify build only buys access from contexts without sync access handles (main thread/service worker) at roughly double the wasm and a slower instrumented path; we do not need that.
+- **VFS choice:** transparency (file export) matters only if the database file is the unit of replication. With an event log (D31) it is not, so the fast `AccessHandlePoolVFS` is acceptable **only with a single-writer guarantee** across tabs; otherwise use `OPFSCoopSyncVFS`/`OPFSWriteAheadVFS`, which allow multiple connections.
+- **JSPI** (async suspension without Asyncify) is Chromium-only today; noted as the future replacement, not a baseline.
+
+## D31 — Sync model: append-only event log, not a CRDT ✅
+- **Context (user):** an agentic **local-first** app syncing across the user's own devices and sessions — explicitly **not** collaboration.
+- **Decision:** sessions are single-writer. Replication is an immutable **event log** per session plus a **per-device cursor**, with a **session lease** so two devices never run the same session at once (the second forks or waits).
+- **Why not Yjs:** CRDTs solve concurrent edits of shared state. Here the needs are durability, resume and dedupe; an ordered log gives all three, stays queryable, and ports to D1 unchanged. Yjs remains an option for a future *document* surface, scoped to that surface.
+- **Dedupe/idempotency:** writer-assigned UUIDv7 `event_id`; the relay ignores a repeated `(session_id, event_id)`, so retries are free.
+- **Ordering (corrected during implementation):** a writer's `seq` is **per device**, so two devices both produce 1, 2, 3 and `seq` cannot order a session across devices. The relay assigns a monotonic `position` per row; **only `position` is comparable globally**, and per-device cursors track it. `seq` remains useful for local tail reads and for a device's own log.
+- **Compaction:** a `Snapshot` event carries full state; a new device replays from the latest snapshot instead of the whole history.
+- **Stores:** `FileEventStore` (JSONL per session) for desktop/CLI and Android; SQLite in the browser. Both satisfy the same contract; the file store's tests pin the semantics (ordered reads, idempotent append, per-device cursors).
+
+## D32 — Relay on D1; no Durable Objects unless server-push is needed ✅
+- **D1 is SQLite**, so local schema and migrations are shared (`sessions`, `events`, `sync_state`), which is the main reason SQLite won over IndexedDB.
+- **Single-user topology has no fan-out, presence or broadcast**, so a plain Worker endpoint suffices: `INSERT ... ON CONFLICT DO NOTHING` on push, `SELECT ... WHERE seq > ?` on pull. Durable Objects are earned only by server-initiated notifications or per-document real-time coordination.
+- **Write-rate caution:** one row per keystroke is the wrong shape for D1; batch/coalesce events client-side or move hot paths to a DO.
+- **Privacy:** event payloads may be encrypted client-side so D1 stores ciphertext; the sync protocol is unchanged.
+
+## D33 — `crates/infinity-sync` placement and scope ✅
+- New fork crate holding the wire types, the `EventStore` contract, the file store and per-device cursors.
+- **Native-only for now:** a browser store is blocked by D27 (`?Send` propagation), not by storage choice. The crate deliberately excludes HTTP so the transport stays a separate seam (dev relay now, Worker later).
+
+## D34 — Cloudflare deployment and the e2e findings ✅
+- **Deployed:** Worker `local-first-sync` → `https://local-first-sync.beznet22.workers.dev`, D1 `local-first-sync` in **WEUR** (`database_id a23fb167-d10c-4100-93cb-c76e09f4380a`). Schema applied with `wrangler d1 execute --remote`; credentials come from `apps/.env` (git-ignored) and were never printed or committed.
+- **Propagation:** the first push after `wrangler deploy` returned Cloudflare `404 / error 1042`; the same request succeeded seconds later. Deployments are not instantly routable — retry rather than assume a broken route.
+- **Android TLS recurrence (D21):** the sync transport built its own reqwest client, which on Android goes through `rustls-platform-verifier` and **stalls**. Fixed by adding `HttpTransport::with_client` and passing the app's portable (compiled-in roots) client. Any new HTTP path on Android must reuse that client.
+- **Android result:** `pushed 1, fetched 3, position 3` against the deployed Worker.
+- **Browser result:** wa-sqlite 3.44.0 + `AccessHandlePoolVFS` over OPFS, `before 0 → after 8`, `devices: browser,laptop,android`, and a reload kept 8 rows while fetching only 1 new one (`persistence: PASS (8 → 9)`).
+- **wa-sqlite 1.0.0 API facts (all cost a cycle to learn):** `libversion` is a **function** (not a string); VFS modules export **classes**, not `create()` factories (`new AccessHandlePoolVFS(dir)`, then `await vfs.isReady`, then `vfs_register(vfs, true)`); the package ships `AccessHandlePoolVFS` and an async OPFS VFS but **no `OPFSCoopSyncVFS`**; inserts go through `sqlite3.run(db, sql, params)` — the `exec({ bind })` form does not exist.
+- **Build script:** the Android build recipe now lives in `scripts/build-apk.sh`, which validates `JAVA_HOME` (a stale `/opt/android-studio/jbr` was overriding a working JDK), sets the NDK linker env (otherwise cargo falls back to `cc`), and `cd`s to its own directory (running it from another cwd made pnpm look for a manifest in the root checkout).
+- **One session, three devices:** the same `cloud1` session is readable from the CLI, the phone, and the browser, with each device pushing its own events and pulling the rest.
+
+## D35 — The fork's core runs in a browser, with a real model ✅
+- **What ran:** `crates/infinity-wasm` compiled with `wasm-pack --target web`, loaded in headless Chrome. Two entry points:
+  - `run_smoke_turn` — full `AgentSystemBuilder` → local driver → thread → `StaticModel`, answered by a deterministic mock provider. Result: `{"ok": true, "reply": "infinity-wasm-turn-ok"}`.
+  - `run_openrouter_turn(api_key, model, prompt)` — the same turn through **OpenRouter**, keyed at runtime. Result: `{"ok": true, "mode": "openrouter", "reply": "infinity-browser-openrouter-ok"}`.
+- **No tokio runtime:** the local system is `!Send` (D15), so it runs inside a `LocalSet::run_until` awaited directly from a `wasm-bindgen` future. A successful turn never touches `tokio::time`; only the retry paths do, which is why the mock and real turns both work.
+- **CORS:** OpenRouter serves the browser directly (verified `200` from the page with `Authorization: Bearer`). Providers that do not send CORS headers cannot be called this way — they need the Worker relay as a proxy. The Kimchi endpoint was not tested from the browser for this reason.
+- **`!Send` bridge inside `async_trait`:** `ModelProvider` requires `Send` futures, but reqwest's wasm response is `!Send` (a JS promise). The fetch therefore runs in `wasm_bindgen_futures::spawn_local` and hands its result back through a `tokio::sync::mpsc` channel; the trait method only awaits a `Send` receiver. This is the pattern to reuse until D27's `?Send` propagation lands.
+- **Key handling:** injected with CDP `Page.addScriptToEvaluateOnNewDocument`, so it exists only in that tab's memory. Never written to a file, never committed.
+- **Bundle (release, after `wasm-pack` + `wasm-opt`):**
+
+| Artifact | raw | gzip |
+|---|---|---|
+| `infinity_wasm_bg.wasm` (mock only) | 3,593,253 | 891,975 |
+| `infinity_wasm_bg.wasm` (+ OpenRouter/reqwest) | **3,919,251** | **1,028,494** |
+| extra `wasm-opt -Oz` pass | 3,770,160 | 1,026,769 |
+| JS glue | 31,456 | — |
+| debug build (for reference) | 9,149,331 | 2,103,705 |
+
+- **Where the bytes go** (pre-bindgen release artifact, 5,820,847 B): `.rodata` 1,267,594 (21.8%), name section 657,334 (11.3%, stripped in the package), `__wasm_bindgen_unstable` 284,189 (4.9%), **Rhai** packages/parser ≈ 190 KB visible plus its `.rodata` share, `chrono-tz` tables 22,781, `infinity_agent_core::run_completion` 27,935, remainder spread over 8,803 items.
+- **Next size lever:** Rhai and `chrono-tz` are the only clearly removable contributors. If the browser never evaluates Rhai scripts or formats timezones, gating them behind a feature is worth more than another `-Oz` pass (which buys ~4%).
+
+## D36 — Generic OpenAI-compatible browser provider, and all-platform sizes ✅ / ⏸️
+- **Provider:** the hardcoded OpenRouter client became `OpenAiCompatibleProvider(base_url, api_key, model)`; the export is `run_openai_compatible_turn(base_url, api_key, model, prompt)`. `…/chat/completions` is appended to the caller's base URL, so OpenAI (`https://api.openai.com/v1`), OpenRouter (`https://openrouter.ai/api/v1`), Kimchi (`https://llm.kimchi.dev/openai/v1`) and local servers all work. D35's `run_openrouter_turn` is superseded.
+- **Verified in the browser:** the mock turn still passes (`infinity-wasm-turn-ok`, mode `mock`).
+- **Not yet verified with a real endpoint — three concrete blockers, measured:**
+  1. `panicked at std/time/...: time not implemented on this platform` — something on the real-path turn calls `std::time` (likely request timing), which `wasm32-unknown-unknown` does not implement.
+  2. `js-sys ... RefCell already borrowed` in `futures/task/singlethread.rs` — a reentrancy panic from polling a JS-backed future inside `spawn_local`; the bridge must not re-enter the same `JsFuture`.
+  3. OpenRouter answered **429** for the free model used (`inclusionai/ling-3.2-flash:free`), so the test also needs a non-throttled model.
+  These are the browser analogues of N1/N2 in the wasm plan: `std::time` and single-threaded future reentrancy, not provider logic.
+- **All-platform sizes (measured, release unless noted):**
+
+| Target | Artifact | Raw | Stripped | gzip |
+|---|---|---|---|---|
+| CLI (fork agent) | `target/release/infinity` | 26,289,856 | 20,896,328 | 8,617,892 |
+| CLI (app sync) | `apps/local-first/.../local-sync` | 7,503,696 | 6,159,688 | 2,757,516 |
+| Wasm | `infinity_wasm_bg.wasm` + JS | 3,920,352 + 31,828 | — | 1,029,467 |
+| Wasm (debug, reference) | same | 9,149,331 | — | 2,103,705 |
+| Android release APK | `app-universal-release-unsigned.apk` | 27,502,271 | — | — |
+| Android debug APK | `app-universal-debug.apk` | 523,872,165 | — | — |
+
+- **Android APK composition (release, arm64 only):** native `.so` **25,836,608 B (94%)**, dex 735,410, resources 259,547, other 570,928. The `.so` is stored, not compressed, so the APK is dominated by Rust code. The debug APK is 19× larger because of symbols and all ABIs — never quote it as the app size.
+- **`infinity-wasm` is 3.9 MB raw / 1.03 MB gzip**, of which reqwest added +326 KB / +137 KB; Rhai and chrono-tz remain the largest removable contributors (D35).
+- **Build script:** `scripts/build-apk.sh [target] [debug|release]`; Tauri treats release as the default, so only `--debug` is a flag.
+
+## D37 — Browser turn works with a real provider; retries must use the platform timer ✅
+- **A1 root cause (measured):** the `time not implemented on this platform` panic came from `event_processor`'s **retry path**, not from the request itself. A provider error (429) reached `tokio::time::sleep`, which calls `Instant::now()` and aborts the page. Fixed by routing every retry wait through a cfg-gated `retry_delay`: `tokio::time` natively, `wasmtimer` on `wasm32` (agent-core now depends on wasmtimer for the web target only).
+- **A2 was a cascade:** with the time panic fixed, the js-sys `RefCell already borrowed` panic did not recur on the success path. No separate fix was needed; treat it as fallout from the aborted poll.
+- **A3 verified, with a real model:** the fork's `run_openai_compatible_turn` produced `{"ok": true, "mode": "provider", "reply": "infinity-browser-openrouter-ok"}` in headless Chrome.
+- **CORS reality on this machine:**
+  - OpenRouter: browser-callable, but the account has **no credits** (€402 on paid models) and the free model rate-limits (429).
+  - Kimchi: **not** browser-callable (`TypeError: Failed to fetch`) — no CORS headers.
+  - Cloudflare fronting Kimchi rejects Python's default user agent with **error 1010**; a custom UA is required.
+  - Therefore a relay is mandatory for non-CORS providers. Verified today with `apps/local-first/browser/dev-cors-proxy.py`, a local stand-in that injects the key server-side (so it never reaches the page) and adds CORS headers.
+- **B1 landed:** `SimpleHttpClient::with_client`, `HttpMcpTransport::with_client`, `McpClient::http_with_client`, and the Android host now assembles its RAP client with the portable TLS client instead of `new()`. This closes the D21/D34 class of "transport built its own client".
+- **Measured bundle at this revision:** wasm 3,920,352 B raw / 1,029,467 B gzip + 31,828 B JS.
+
+## D38 — Durable browser storage without the `?Send` refactor: an actor handle ✅
+- **Problem:** the store traits require `Send + Sync`, but IndexedDB handles and their futures are `!Send` (D27). Relaxing the traits alone fails because the core's async functions require `Send` futures.
+- **Decision:** keep the core unchanged and give the browser a **`Send + Sync` handle**. `IndexedDbStateStore` owns only a `tokio::sync::mpsc::Sender`; the IndexedDB connection lives in a task pinned to the page's `LocalSet`. Each trait method is a request/response round-trip through a `oneshot`, so no `!Send` future is ever held across an await in the caller.
+- **Why not `?Send` propagation now:** it is a core-wide refactor; the actor achieves the same capability at a fraction of the risk. The `?Send` work remains valid for stores that must be `!Send` *by type*, but nothing in the browser needs that today.
+- **Verified on device (headless Chrome, page reload):** `state_probe()` returned `before=0 after=1`, then after a reload `before=1 after=2` — the state survived the reload. Turns now run with `IndexedDbStateStore` supplying processed ids, metadata, subscriptions and pending choices.
+- **idb 0.6 API notes (each cost a compile cycle):** `event.database()` comes from the `DatabaseEvent` **trait**, which must be imported; `ObjectStore::get` resolves to `Option<JsValue>` (absent key); `put` resolves to the key, not the value; `VersionChangeEvent` itself only exposes versions.
+- **Remaining:** the same actor for `ConversationStore` (history) — still in-memory in the browser — and optionally a SQLite/OPFS backend behind the same handle. Neither needs the core to change.
+
+## D39 — Durable conversation history, and the IDB versioning trap ✅
+- **What:** `IndexedDbConversationStore` implements the full `ConversationStore` trait (root bootstrapping, history slicing, append, spawn bookkeeping, ancestor chain, compaction summaries) behind the same `Send + Sync` actor handle as the state store. Semantics are mirrored method-for-method from `InMemoryConversationStore`, so the core cannot tell them apart.
+- **Trap found by testing (first attempt hung):** two stores opened the **same database at the same version 1**. Only the first open fires `on_upgrade_needed`, so the second store's object store was never created — and its transaction failed, leaving the page waiting forever. Fix: one database per store (`infinity-agent-state`, `infinity-agent-history`). Object stores can only be created in an upgrade, so sharing a DB across independent features couples their versions.
+- **Verified in headless Chrome across a reload:**
+  `state: before=0 after=1`, `history: before=0 after=1`, mock turn ok → reload → `state: 1→2`, `history: 1→2`. Both durabilities **PASS**, and turns now run with both stores backed by IndexedDB.
+- **Consequence:** the browser's storage is now the core's own stores, not a JS side path. A SQLite/OPFS backend can be swapped behind the same handle later if query needs appear; nothing in the core changes.
+- **Remaining browser work:** the Worker-isolated tool sandbox and the wake path (Web Push + RAP callbacks).
+
+## D40 — Leases and snapshots are events, derived not coordinated ✅
+- **Lease design:** `LeaseClaim` events carry `{ owner, action, expires_at_ms }`. `current_lease(events, now)` replays them: later wins, an expired claim means nobody holds it, and an explicit `Release` clears immediately. `may_write(events, device, now)` is the guard. Default TTL is 60 s.
+- **Why events:** the relay stays dumb (D31), every device derives the same answer from the same history, and an offline device still knows who owned a session as of its last sync. No coordinator, no heartbeat endpoint.
+- **Snapshot design:** `Snapshot { state, covered_events }` plus `replay(events) -> (Option<state>, tail)` — "latest snapshot + everything after it". A fresh device and one that missed three events use the same rule.
+- **Tested:** `infinity-sync` now has **12 tests** — claim/renew/expire/release, last-claim-wins, malformed lease payloads, replay with and without snapshots, multi-snapshot tail, payload round-trip.
+- **Demonstrated through the CLI** (`local-sync`): `write` → `lease` (`holder: laptop`) → `snapshot` (`covered: 2`) → `write` → `replay` (`has_snapshot: true, tail: 1`).
+- **Not yet enforced:** the lease is advisory in the sync layer. Wiring `may_write` into turn start (and renewing it during a long turn) is the remaining step; until then two devices *can* both run a session.
+
+## D41 — The gates are enforceable: optional tooling no longer blocks, CI covers the fork ✅
+- **`check.bash` was all-or-nothing:** a missing `jj` (or `bwrap`/`sandbox-exec`) aborted the entire run, so none of the fork's own gates could be exercised on a clean machine. It now treats them as optional, says so, and excludes `sandbox-local`'s tests when they are absent. Everything else runs.
+- **Verified:** `./check.bash` exits **0** — formatting, clippy (`-D warnings`), compile, tests, doctests, the wasm gate (9 crates) and the Android gate (8 crates, NDK detected) all pass; Playwright e2e and `cargo-about` are skipped with instructions.
+- **New `.github/workflows/fork-ci.yml`** (fork-specific, leaves upstream `ci.yml` alone): wasm gate, Android gate with `setup-ndk` r27, archetype tests plus the Worker's `tsc --noEmit`, and a `wasm-pack` build that prints raw+gzip size.
+- **Clippy findings fixed on the way** (they had never been seen because the run aborted before lint):
+  - dead `HttpMcpTransport::new` after the client-injection refactor;
+  - a compile-time-constant assertion in `infinity-wasm`'s test;
+  - `to_string()` on `&str` (several) and `unwrap()` in tests in the archetype;
+  - `#[allow]` that the workspace lint requires to be `#[expect(reason = ...)]`.
+- **Consequence:** "green" now means the same thing locally and in CI, and a regression in either target fails a real job rather than a hand-run command.
+
+## D42 — The lease is enforceable through one guard object ✅
+- **API:** `LeaseGuard::acquire(store, session, device, ttl)` returns `Ok(None)` when another device holds the session — the "do not start a turn" signal — or a guard that can `renew()` on the turn's heartbeat and `release()` when done.
+- **Why a guard rather than a check:** it pairs the check with the claim, so there is no window where two devices both pass `may_write` and both start. Release is explicit: dropping the guard cannot release, because releasing is an event and needs an await.
+- **Tested (3 new tests, 15 total):** one-device-at-a-time (second acquire refused), release hands over, an expired lease does not block, and renewal keeps the hold while still refusing the other device.
+- **Demonstrated through the CLI:**
+  `laptop guard` → `{"acquired":true,"holder":"laptop"}`; `phone guard` → `{"acquired":false,"holder":"laptop"}`; `laptop unguard` → released; `phone guard` → `{"acquired":true,"holder":"phone"}`.
+- **Remaining:** hosts must actually call it around a turn. The Android chat probe is the natural first consumer (it owns both an event store and a turn); until that wiring lands the guarantee is available but unused.
+
+## D43 — The first real turn takes the lease ✅
+- **Wiring:** the Android chat probe now claims the session (`android-chat`) before touching a model and releases it when the turn ends. The device id comes from `sync-config.json` at runtime, falling back to `android`; the log lives under the app data dir, so a pushed claim is visible to other devices.
+- **Verified on device — happy path:** `chat.json` → `{"reply":"infinity-on-android-llm","lease":"released"}`, and the event log shows exactly `lease_claim claim android` followed by `lease_claim release android`.
+- **Verified on device — refusal:** planting a foreign claim (`owner: laptop`, expiry +1 h) in the app's log made the next run return `{"reply":"","lease":"denied","notes":["another device holds this session"]}`. The model was **not** called, which is the actual guarantee.
+- **Known gap:** the probe uses the 60 s default TTL and a 45 s turn deadline, so it cannot expire mid-turn. Longer turns must call `guard.renew()` on their own heartbeat; that heartbeat is the remaining work before the lease is safe for arbitrarily long turns.
+
+## D44 — Two physical devices enforce the lease through the relay ✅
+- **What changed:** the Android chat probe now **pulls before judging** and **pushes the claim immediately** (and the release afterwards), instead of deciding from its own log alone. A `hold_lease` config flag keeps the claim for two-device testing.
+- **Verified across two devices** (phone `SM-G781U` + tablet `SM-T875`, both on the LAN, relay = local `wrangler dev` with local D1):
+  - phone A: `{"reply":"infinity-on-android-llm","lease":"held"}`, and the relay logged `POST /v1/sync/push`;
+  - tablet B, launched seconds later: pulled A's claim and returned `{"reply":"","lease":"denied","notes":["another device holds this session"]}` — **no model call**.
+- **Why this mattered:** the single-device refusal in D43 could not distinguish "lease works" from "local log says so". With the claim travelling through the relay, the guarantee is now the one that counts: one user, two devices, one writer.
+- **Operational note:** the default TTL is 60 s, so the test had to re-claim on A and start B within a minute. That is exactly the gap the foreground-service heartbeat closes next.
+- **Cleanup:** the tablet's test configs and the planted session log were removed; the relay was stopped (test-only, never deployed this time).
+
+## D45 — Foreground service keeps the turn and the lease alive ✅
+- **Service:** `InfinityForegroundService` (Kotlin, in the plugin) declares `foregroundServiceType="dataSync"`, requires `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_DATA_SYNC`, and shows a low-importance ongoing notification on channel `infinity-session`. The plugin exposes `start_foreground_service`/`stop_foreground_service`; the app starts it around the chat probe and stops it afterwards.
+- **Heartbeat:** the turn loop renews the lease every **5 s** (TTL 60 s, so two missed beats still leave the claim valid). The first `interval` tick is skipped because it fires immediately.
+- **Verified on the tablet (SM-T875):**
+  - while the turn ran, `dumpsys notification` showed `id=4711 … channel=infinity-session`;
+  - a short turn finished under 5 s and produced only `claim → release` (no renewal, as expected);
+  - a forced long turn (8 s, 6,527-char reply) produced `claim → renew → release`.
+- **Honest limits (not overclaimed):** a foreground service is not immortality — Android 12+ restricts starting it from the background, 14+ requires the declared type, 15 caps `dataSync` at ~6 h/day, and OEM builds still kill apps. The TTL is what protects other devices when the service dies anyway.
+- **Next correctness step:** a **fencing token** on claims (monotonic per session; the relay rejects appends carrying a stale one) closes the brief overlap that expiry alone permits.
+
+## D46 — Fencing tokens close the expiry window ✅
+- **Why:** a lease TTL alone allows a stalled holder and the new holder to both believe they may write. The fence makes supersession explicit.
+- **Token:** every `lease_claim`/`lease_renew` carries `fence = 1 + max(fence seen for the session)`; the guard stores it, stamps it on its own writes (`SyncEvent::with_fence`), and advances it on renewal.
+- **Superseded holder:** `LeaseGuard::renew` computes the next fence and refuses with `SyncError::LeaseLost` before appending anything when it is no longer `own fence + 1`.
+- **Relay:** D1 keeps `sessions.current_fence`; push drops any event whose fence is below it and returns `{accepted, stale}`. The events table stores the fence it accepted.
+- **Verified locally:** claim f1 → accepted, message f1 → accepted, claim f2 → accepted, message f1 → `stale: 1` (not stored), message f2 → accepted. Log shows exactly the four accepted rows.
+- **Limits (honest):** the read-then-write check is not atomic under concurrent pushes to the same session — two racing writes can both pass. The lease claim is still the primary serialization; the fence removes the long-tail window, not every race. A Durable Object or a conditional `INSERT … WHERE` per session would close it.
+- **Unfenced writes:** an event with no fence counts as 0, so once a session has taken a lease only fenced writes are accepted. This is deliberate; the CLI stamps the current holder's fence.
+
+## D47 — Edits are messages with a parent pointer ✅
+- **Model:** every message records `reply_to` (the message it answers) and, when it is an edit, `edited_from` (the version it replaces). No separate branch id: a branch is the set of versions reachable through `edited_from`, so there is nothing extra to keep coherent across devices.
+- **Fork point:** an edit keeps the original's `reply_to`, so the fork happens *at* the edited message, not after the answer it already received.
+- **Visibility:** a superseded version is hidden, and so is anything whose `reply_to` chain passes through one. The answer to the old text therefore disappears with it — the behavior ChatGPT users expect.
+- **Helpers:** `transcript()` (visible rows + version counts), `versions()` (the whole edit group, oldest first), `alternatives()` (siblings under a parent, for a switcher), `message()` (lookup).
+- **Verified:** 21 crate tests, plus a CLI run: original + answer → edit → thread shows only `edited question` (v2) → answer the edit → thread shows the new pair. The stale answer never appears.
+- **Limits:** the transcript renders the newest version only; earlier versions are stored and retrievable but there is no switcher UI yet (that belongs with the thread list, #128). Editing does not delete history — the relay keeps every version.
+- **Assumption:** message payloads are `MessagePayload` JSON. Older ad-hoc payloads without `reply_to`/`edited_from` still render (test covers it).
+
+## D48 — Readers are unrestricted; one writer at a time ✅
+- **Summary:** `summarize()` answers the three questions a thread list needs — visible messages, the highest writer `seq`, and who (if anyone) holds the lease — plus `read_only`, which is true when the holder is another device.
+- **Surface:** CLI `inbox` lists sessions for a device; `resume --session` prints the transcript together with `holder` and `read_only`.
+- **Verified:** with the laptop holding the lease, a second device (phone root, log copied as a pull would) showed `messages=2, holder=laptop, read_only=true` and the same two transcript rows; after release it showed `holder=None, read_only=false`.
+- **Why copying the log is a fair simulation here:** `pull` writes exactly the events the relay returns, and the store format is the log itself. The relay deployment is gone (D34), so a local copy is the same bytes without pretending a network round-trip happened.
+- **Limits:** no UI yet (the CLI is the surface), no pagination on long sessions, and a reader must pull before it can show anything — resume does not fetch by itself.
+
+## D49 — Message queue, remove, restore and delete are **not** implemented ❌
+Asked explicitly; the honest state:
+- **What exists:** the driver defers inputs that arrive mid-step (`InMemoryDeferQueue` + `pending_batch`), and the TUI queues *choice requests* (`PendingChoice`). Both are internal scheduling, neither is a user-visible message queue, and neither offers remove/restore.
+- **What does not exist:** enqueueing a message for later, removing one from the queue, restoring a removed one, or deleting any message. The event log is append-only and has no tombstones, so "delete" has no representation at all.
+- **Why the log matters:** delete/restore must be events too (a tombstone plus a restore), otherwise a second device cannot tell the difference between "deleted" and "never received". Any UI-only delete would resurrect on the next pull.
+- **Sketch for the next chunk (#130):** `MessageQueued` (a message with `queued: true`), `MessageRemoved` (drops it from the queue), `MessageDeleted` (tombstone, hidden from `transcript`), `MessageRestored` (clears either removal or tombstone). Queue state and visibility are both folds over the log, so they survive a pull by definition.
+
+## D50 — Queue while the agent works; delete from a point and restore it ✅
+- **Enqueue:** `MessageQueued` records text the user wrote mid-turn. It is **not** part of the transcript until `MessageSent` arrives — the agent never sees a message the user has not delivered.
+- **Dequeue:** `MessageDequeued { target }` removes it permanently. A dequeued message has no `MessageSent`, so it can never be promoted by a later event.
+- **Order:** the queue is FIFO by enqueue time even if the agent takes messages out of order; the transcript sorts by enqueue `at`, so the user's intent is preserved.
+- **Delete from a point:** `ConversationTruncated { from }` hides `from` and every message after it. `ConversationRestored { truncation }` undoes one truncation by id. Both are folds over the log, so a second device that pulls sees the same deletion and the same undo.
+- **Verified:** queue two while "busy" (transcript empty) → dequeue one (1 left) → send the other (transcript 1, waiting 0) → add two more (3 visible) → delete from the second (1 visible) → restore (3 visible). Plus 28 crate tests, including one that reloads the log and still sees the truncation.
+- **Limits:** pull-based — a second device learns about queue/delete changes on its next pull, there is no push yet. The agent driver does not consume this queue yet (its own `InMemoryDeferQueue` still holds mid-step inputs); wiring the two together is the next integration step.
+- **Why not a UI-only delete:** it would resurrect on the next pull, and a peer could not tell "deleted" from "never received" (D49).
+
+## D51 — A real device turn drains the queue ✅
+- **Where:** the Android chat probe. Before its configured prompt it folds the log with `queue()`, and for each waiting message it appends `MessageSent`, runs the model, and appends the `AssistantMessage` with `reply_to` set to the queued event.
+- **Ordering and bounds:** FIFO by enqueue time, at most 5 messages per run, so one launch cannot spiral into an unbounded number of model calls.
+- **Lease:** every appended event carries `guard.fence()`, and the same 5 s heartbeat renews the lease across *all* drained turns, not just the first.
+- **Verified on the tablet:** seeded two queued messages, launched the probe, and got `{"reply":"beta","drained":2}` in `chat.json`, with the log showing `message_sent → assistant_message("alpha")`, `message_sent → assistant_message("beta")`, all fenced at 1, plus claim/release.
+- **Deliberate behavior:** when anything was drained the configured prompt is skipped — asking the same question twice in one launch wastes a paid call. The reply field reports the last drained answer.
+- **Layering:** this bridges at the app layer, as D33 requires; the fork's core `InMemoryDeferQueue` still handles mid-step inputs for callers that do not use the sync log.
+- **Remaining gap:** a second device learns about queue changes on its next pull. Closing that needs a push channel (WebSocket/DO) or polling; the relay deployment is currently absent by choice.
+
+## D52 — `watch` closes the propagation gap by polling ✅
+- **What:** `local-sync watch --session S --relay URL [--interval 5] [--iterations N]` pulls on an interval, appends whatever the relay has, advances the cursor, and prints one line per round: `{round, fetched, position, kinds}`.
+- **Why polling:** the relay has no channel to the client, and turning one on is a deployment decision (WebSocket/Durable Object). Polling needs no new infrastructure and keeps the cloud-optional property: stop the relay, and local use is unchanged.
+- **Verified:** with a stub pull endpoint that returns nothing on the first request and one message on the second, `watch --interval 1 --iterations 2` printed `fetched 0` then `fetched 1, kinds ["UserMessage"]`, and `resume` afterwards showed the message from the other device.
+- **Limit, stated plainly:** this is not push. A quiet client notices a change up to `--interval` seconds later, and each idle poll is one HTTP request. Real push (DO + WebSocket, or Web Push for a closed browser tab) remains available as a deployment choice.
+
+## D53 — SQLite is the default log ✅
+- **Why:** JSONL can only truncate the last line on a crash, but it also cannot guarantee that a line reaches the disk, cannot index by `seq`, and re-reads the whole file per query. The log is the foundation every later feature writes through, so it moved first.
+- **Implementation:** `SqliteEventStore` (`rusqlite`, `bundled`) behind the existing `EventStore` trait. One explicit transaction per append, `INSERT OR IGNORE` on `(session_id, event_id)` for idempotent retries, `PRAGMA journal_mode=WAL` for concurrent readers, `synchronous=FULL` so a commit is on disk before it returns.
+- **Feature-gated:** `sqlite` is on by default; a consumer that only wants the file backend can turn it off. The browser keeps wa-sqlite over OPFS — same event shape, different engine.
+- **CLI:** `--store sqlite|jsonl`, default `sqlite`. JSONL stays for copy-friendly exports and old roots; the demo re-read a JSONL root with `--store jsonl` unchanged.
+- **Tests (31 in the crate):** the same contract as the file store; an uncommitted insert is invisible after reopen (crash simulation); identical events produce an identical `transcript` and identical fence round-trips on both backends.
+- **Verified on the tablet:** seeded a SQLite log with two queued messages, launched the probe, got `{"reply":"beta","drained":2}`, and the pulled database showed 8 rows (`message_queued` ×2, `lease_claim`, `message_sent`, `assistant_message` ×2, release) with fences on every write.
+- **Cost, stated honestly:** `rusqlite` bundled compiles SQLite from source, which lengthens the Android build; the APK size increase was not measured this run.
+
+## D54 — One session view, one contract ✅
+- **What:** `session_view()` folds a log into `SessionView`: messages (id, role, text, version count, `reply_to`), queue, truncations with `active`, plus `holder`/`read_only`/`fence`/`last_seq`. The CLI prints it with `view --session`.
+- **Why:** Android and the browser would otherwise grow two folds over the same log and drift. A renderer that disagrees with the JSON is wrong, not merely different — that is what the golden test pins.
+- **Tests:** both backends produce an identical view from the same event set; the view reports a queued message, an active truncation and the restored tail; `read_only` flips when another device holds the lease; the serialized shape is asserted field by field.
+- **Cost:** the view is rebuilt per call, so it is linear in the session. Fine for local logs; pagination or caching belongs with the UI if sessions get large.
+- **Limit:** today only the CLI consumes it. The browser will call the same function through wasm and Android through a Tauri command in the UI step — until then the contract is pinned by tests, not by a second implementation.
+
+## D55 — Android runs tools in wasmi with no host imports ✅
+- **Crate:** `apps/local-first/crates/infinity-wasm-sandbox` (app-layer, host-testable). `run(bytes)` compiles, refuses any module that imports anything, caps linear memory at 1 MiB and bounds work with a 10M fuel budget, then calls the exported `run() -> i32`.
+- **Why no imports:** with an empty import set there is no path to the filesystem, the network, the clock or the environment — the denial is structural, not a policy check that can be bypassed.
+- **Tests (host, 4):** a plain module returns 42; a WASI `fd_write` import is refused with the import named; a non-terminating loop traps on fuel; garbage bytes are rejected at compile.
+- **On-device proof:** every launch runs three embedded modules and writes `sandbox.json`. On the SM-T875: `{"benign":{"ok":42},"hostile":{"denied":"imports wasi_snapshot_preview1.fd_write, the sandbox has none"},"spin":{"denied":"trap: all fuel consumed by WebAssembly"}}`.
+- **Cost:** wasmi is embedded only on Android (the browser engine is the sandbox there, D29). The APK-size delta was not isolated this run; it belongs in the Step 7 budget.
+- **Limit:** this is the executor, not the tool registry. Tools are not yet loaded dynamically or shipped as separate modules; the probe proves the isolation boundary that such a registry will use.
+
+## D56 — The browser sandbox is a Worker with one permitted import ✅
+- **Rules:** one Worker per tool; the only import allowed is `env.memory`, supplied by the host with `maximum: 16` pages (1 MiB). A module that declares its own memory is refused, because the host could not then bound it. Anything else (WASI, JS glue) is denied by name before instantiation.
+- **Time:** the host terminates the Worker after 500 ms. JavaScript has no fuel metering, so termination is the coarse equivalent; it is honest about what it is.
+- **Verified in headless Chrome (CDP, real time):** `echo42 → 42`, `wasi_write → denied: wasi_snapshot_preview1.fd_write`, `spin → timeout: terminated after 500ms`, `no_memory → denied: the tool must import env.memory so the host can bound it`.
+- **Why not wasmi:** the browser engine is already a Wasm runtime (D29). Embedding a second interpreter would add weight without adding isolation that the Worker boundary does not already provide.
+- **Limit:** this is an executor, not a registry; tools are fetched by URL in the harness, and the app does not call it yet. Persistence and wake are separate steps (#121).
+
+## D57 — Fencing is atomic, and the relay is no longer open ✅
+- **Atomic fence:** the old read-then-write allowed two racing pushes to both pass. The insert is now one conditional statement — `INSERT … SELECT … WHERE ?fence >= COALESCE(current_fence, 0)` — and an `AFTER INSERT` trigger advances `sessions.current_fence` inside the same statement's transaction. D1 serialises single statements, so the check and the write cannot be separated.
+- **Race test:** a claim at fence 2, then 40 concurrent pushes at fence 1 → 0 accepted, 40 rejected, and no stale row sits after the claim's position. `INVARIANT: PASS`.
+- **Verdict reporting:** `meta.changes` counts the trigger's upsert too, which made one claim report `accepted: 2`. Acceptance is now decided by whether the event row exists afterwards.
+- **Auth:** `RELAY_TOKEN` is required for `/v1/*`; unset means **503** (refuse to serve), wrong token **401**, correct token **200**. `/health` stays open. Local runs use a git-ignored `.dev.vars`; deployment uses `wrangler secret put`. The client gained `HttpTransport::with_token` and the CLI `--relay-token`.
+- **Verified:** `no token → 401`, `wrong → 401`, `correct → 200 ["race","race2"]`; CLI push `→ 401` then `{"accepted":1}` with the token.
+- **Still missing before a public deployment:** per-user namespacing (one token protects the whole relay) and rate limits. Deploying is an external action and needs explicit approval.
+
+## D58 — Size budgets are enforced, not observed ✅
+- **WASM (CI):** `fork-ci.yml` fails the build above **4,300,000 bytes raw** or **1,100,000 bytes gzip**. Today's artifact is 3,920,352 raw / 1,029,467 gzip, so there is ~7% headroom; raising a budget needs a written reason in this file.
+- **APK (local script):** `android/scripts/check-size.sh` builds release and fails above **33,000,000 bytes**. Measured now: **31,784,275** (30.3 MB), up from 27,502,271 before SQLite + wasmi.
+- **Why local and not CI:** an APK build needs the full Tauri/NDK toolchain; the CI Android job only compiles the foundation crates. The script is the honest gate until a release job exists.
+- **What the increase buys:** bundled SQLite (durable log) and wasmi (tool isolation). Neither is removable without losing a property the plan requires.
+- **Still open:** the cross-platform E2E matrix (desktop → Android → browser with shared assertions) is not scripted yet.
+
+## D59 — One pure renderer, commands as data ✅
+- **Shape:** `renderThreads(root, {sessions, active}, {onCommand, onSelect})` draws the thread list, read-only banner, transcript with version badges, queue tray, restore controls and composer. It never fetches or writes: interactions emit commands (`enqueue`, `dequeue`, `send`, `edit`, `versions`, `restore`, `select`) that the host applies to the log.
+- **Why pure:** Android and the browser then share one UI. The only difference is where `SessionView` JSON and commands travel (Tauri command vs wasm binding).
+- **Verified in headless Chrome** with a two-session fixture: banner reads `laptop is writing — read-only`, transcript shows both messages, queue count 1, composer and send are disabled while read-only, the badge reads `2 versions`, and clicking emitted exactly `versions`, `edit`, `restore`, `dequeue`, `select`, `enqueue` in that order. Switching to the writable session re-enables the composer.
+- **Limit, stated plainly:** this is the renderer, not the product. It is not yet fed by live data on Android or in the browser (todo #140), and there is no pagination or virtualised transcript for long sessions.
+
+## D60 — Android UI is wired to the live log ✅ (browser still open)
+- **Commands:** `session_views` returns `session_view()` for every session; `apply_command` takes the renderer's commands (`send`, `enqueue`, `dequeue`, `edit`, `restore`) and appends the matching event with the lease fence when this device holds it.
+- **Page:** `dist/index.html` loads the shared renderer and replaces the probe button; no platform logic in the UI beyond `invoke`.
+- **Verified on the SM-T875:** seeded log rendered `android-chat` with `queued (2)` and an enabled composer; typing `typed_in_ui` and tapping **queue** produced `queued (3)` in the UI and a third `message_queued` row in the pulled database.
+- **Fixed while testing:** an empty transcript used to say "messages were deleted" even when nothing had been sent; it now distinguishes deleted from not-yet-sent.
+- **Not done:** the browser has no live binding yet. It needs either a wasm export of `session_view` (blocked by `infinity-sync`'s tokio/rusqlite deps) or a JS port with parity tests — that choice is todo #141, not a decision made here.
+- **Also found:** `cargo check` for the host fails in the plugin's desktop path (`InfinityAndroid<R>` vs a non-generic desktop struct). The Android target builds; the desktop path is a latent bug worth its own fix.
+
+## D61 — A JS mirror of the view, pinned by a Rust golden fixture ✅
+- **Why a mirror:** `infinity-sync` cannot compile for wasm32 (tokio's fs and rusqlite are native-only), so the browser cannot call `session_view()` directly. The alternatives were a crate split (pure folds vs backends) or a JS port; the port was chosen for this step because it is testable today without restructuring the crate.
+- **Fixture:** `cargo run -p infinity-sync --example view_fixture` emits `browser/view/fixtures/view-golden.json` — a deterministic log (fixed UUIDs) plus the `view` Rust computes for it. The scenario covers a surviving message, an edit group, a queue entry, a dequeue, and an active truncation.
+- **Parity test:** `node browser/view/test.mjs` runs the JS fold over the same events and requires structural equality with the Rust view (keys sorted). It passes: `1 message, 1 queued`.
+- **Risk, stated plainly:** two implementations can drift. The fixture is the guard; a future change to the Rust fold must regenerate the fixture and update the JS in the same commit, and a crate split would remove the mirror entirely.
+- **Not done:** the browser still has no page consuming this fold from wa-sqlite/OPFS. That wiring (plus a reload-persistence test) is todo #142.
+
+## D62 — The browser page runs on OPFS through a worker ✅
+- **Storage:** a dedicated module worker owns `OpfsDb("infinity-app.db")` and the `events` table (same columns as the Rust store). The page talks to it with `{type: "load"}` / `{type: "append"}` messages — the same shape as Android's Tauri commands, so both hosts expose one contract.
+- **View:** the page computes `sessionView` with the parity-tested JS port (D61) and hands it to the shared renderer (D59). Commands become events: `message_queued`, `user_message`, `message_dequeued`, `conversation_restored`.
+- **Verified in headless Chrome** (COOP/COEP server on 8128): typing `queued in the browser` and tapping queue produced `1 events in OPFS · 0 visible · 1 queued`; **reloading the page kept the queue entry and the count**, so the data is in OPFS rather than memory.
+- **Limits:** one fixed session (`browser-chat`), no lease acquisition in the page yet (so it never shows a read-only banner from real data), and no relay sync from the browser UI. Those belong with the E2E and wake steps.
+
+## D63 — One script runs the three platforms ✅
+- **What:** `apps/local-first/scripts/e2e.py` exercises the same properties where they apply. Desktop: queue while busy stays out of the transcript, send promotes it, delete-from-here hides the tail, restore brings it back. Browser: a message queued in the page survives a full reload via OPFS. Android: with `ADB_DEVICE` set, the device probe is fetched and must contain a successful sandbox run.
+- **Result:** `desktop {"messages":2,"queue":0}`, `browser {"queue":1,"status":"1 events in OPFS · 0 visible · 1 queued"}`, `android {"probe":{…"infinity-on-android"}}`, `E2E PASS`.
+- **Server handling:** reuses an already-running static server, otherwise starts one and fails loudly; `serve.py` now sets `allow_reuse_address` so back-to-back runs do not collide on TIME_WAIT.
+- **Honest scope:** the legs are not one replicated conversation — each platform uses its own local log. A shared relay run (push from desktop, pull in browser, lease refusal on Android) is the next step, and it needs the relay redeployed, which is an external action.
+- **Android leg depth:** it proves the device responds and its sandbox ran; it does not drive the UI (that was verified separately in D60 with screenshots and a database diff).
+
+## D64 — WhatsApp automation verified; real send to GreatLover ✅
+- **Blocking fixes found by testing:**
+  - `tapFirstChat` never called back when no row existed, so `whatsappRead`/`whatsappSend` hung forever on an unlinked account. Both now reject with a clear message.
+  - The read retry gave up after ~5.6 s; the first open on a linked device took longer, so it now retries up to 16 s.
+  - Typing into the composer without a proper focus/selection left only `"
+"`. The path now focuses and selects before inserting, reports a preview, and refuses to tap Send when the composer holds fewer characters than the message.
+- **Verified on the SM-T875:** pairing code `KEQ8-MZAL`, then `chatList: true`, `chatRows: 26`; `whatsappRead` returned 29 messages from the first row; the dry run reported `drafted: true` (initially `chars: 1`, which exposed the focus bug).
+- **Real send, user-requested:** an encouraging message signed "Edapex" was sent to the chat **GreatLover**. Recipient was confirmed (`#main header` = `GreatLover`) before the click, typed text was 1,288 characters, the composer cleared, and the message appears in the conversation history.
+- **Method, honestly:** the successful send used CDP (`Input.insertText` + `Input.dispatchMouseEvent`) through the same WebView the plugin drives. The plugin's own path is fixed but was not the one that delivered this message; a direct `whatsapp_send` retry with the fixed build is the follow-up.
+
+## Revisit triggers 🔁
+- **Pyodide major bump:** wasmsh pins Python 3.13; current Pyodide is 314.0.x (Python 3.14). When picking the sandbox runtime, check wasmsh's Pyodide version vs. current.
+- **Background Sync:** re-check caniuse if Chromium-only status changes.
+- **wasm-pack org/maintenance:** healthy as of 0.15.1 (2026-10-30) under wasm-bindgen org; rustwasm working group sunset (July 2025) means watch for tooling drift (e.g. `wasm-tools` alternatives).
+- **Shizuku primitives:** verify `newProcess`/uiautomator/`am` surface when scaffolding the Android plugin.
+- **Trait naming for the fork:** settle final names (`SandboxExecutor` etc.) when creating `crates/infinity-wasm`.
+- **tokio wasm support upstream:** #7550 (fs/threads/timer on unknown-wasm) and #8194 (emscripten) are open — re-check before choosing timer/FS replacements for Phase 0 (W5).
+- **reqwest wasm `!Send` handling:** resolved (D15 resolution) with cfg-gated traits; revisit if reqwest ships `Send`-compatible wasm futures.
+- **Browser timers before Phase 3:** if any browser code path invokes `TokioSleepTool`/`TokioSleepUntilTool`/`SleepUntilEventOrInputTool` before D18 lands, it will panic at runtime — implement `SliceTimer` first.

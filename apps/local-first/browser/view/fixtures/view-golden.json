@@ -1,0 +1,140 @@
+{
+  "device": "laptop",
+  "events": [
+    {
+      "created_at_ms": 1794930448865,
+      "device_id": "laptop",
+      "event_id": "00000000-0000-0000-0000-000000000008",
+      "kind": "user_message",
+      "payload": {
+        "at": 1794930448865,
+        "edited_from": null,
+        "reply_to": null,
+        "text": "hello"
+      },
+      "seq": 8,
+      "session_id": "chat"
+    },
+    {
+      "created_at_ms": 1794930448865,
+      "device_id": "laptop",
+      "event_id": "00000000-0000-0000-0000-000000000001",
+      "kind": "user_message",
+      "payload": {
+        "at": 1794930448865,
+        "edited_from": null,
+        "reply_to": null,
+        "text": "what changed?"
+      },
+      "seq": 1,
+      "session_id": "chat"
+    },
+    {
+      "created_at_ms": 1794930448865,
+      "device_id": "laptop",
+      "event_id": "00000000-0000-0000-0000-000000000002",
+      "kind": "assistant_message",
+      "payload": {
+        "at": 1794930448865,
+        "edited_from": null,
+        "reply_to": "00000000-0000-0000-0000-000000000001",
+        "text": "the log"
+      },
+      "seq": 2,
+      "session_id": "chat"
+    },
+    {
+      "created_at_ms": 1794930448865,
+      "device_id": "laptop",
+      "event_id": "00000000-0000-0000-0000-000000000003",
+      "kind": "user_message",
+      "payload": {
+        "at": 1794930448865,
+        "edited_from": "00000000-0000-0000-0000-000000000001",
+        "reply_to": null,
+        "text": "what changed, exactly?"
+      },
+      "seq": 3,
+      "session_id": "chat"
+    },
+    {
+      "created_at_ms": 1794930448865,
+      "device_id": "laptop",
+      "event_id": "00000000-0000-0000-0000-000000000004",
+      "kind": "message_queued",
+      "payload": {
+        "at": 1794930448865,
+        "reply_to": null,
+        "text": "also check the queue"
+      },
+      "seq": 4,
+      "session_id": "chat"
+    },
+    {
+      "created_at_ms": 1794930448865,
+      "device_id": "laptop",
+      "event_id": "00000000-0000-0000-0000-000000000005",
+      "kind": "message_queued",
+      "payload": {
+        "at": 1794930448865,
+        "reply_to": null,
+        "text": "never mind"
+      },
+      "seq": 5,
+      "session_id": "chat"
+    },
+    {
+      "created_at_ms": 1794930448865,
+      "device_id": "laptop",
+      "event_id": "00000000-0000-0000-0000-000000000006",
+      "kind": "message_dequeued",
+      "payload": {
+        "target": "00000000-0000-0000-0000-000000000005"
+      },
+      "seq": 6,
+      "session_id": "chat"
+    },
+    {
+      "created_at_ms": 1794930448865,
+      "device_id": "laptop",
+      "event_id": "00000000-0000-0000-0000-000000000007",
+      "kind": "conversation_truncated",
+      "payload": {
+        "from": "00000000-0000-0000-0000-000000000002"
+      },
+      "seq": 7,
+      "session_id": "chat"
+    }
+  ],
+  "session": "chat",
+  "view": {
+    "device": "laptop",
+    "fence": 0,
+    "holder": null,
+    "last_seq": 8,
+    "messages": [
+      {
+        "event": "00000000-0000-0000-0000-000000000008",
+        "reply_to": null,
+        "role": "user",
+        "text": "hello",
+        "versions": 1
+      }
+    ],
+    "queue": [
+      {
+        "event": "00000000-0000-0000-0000-000000000004",
+        "text": "also check the queue"
+      }
+    ],
+    "read_only": false,
+    "session": "chat",
+    "truncations": [
+      {
+        "active": true,
+        "from": "00000000-0000-0000-0000-000000000002",
+        "id": "00000000-0000-0000-0000-000000000007"
+      }
+    ]
+  }
+}

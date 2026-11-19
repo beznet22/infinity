@@ -4,8 +4,30 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// Abstraction over HTTP client for RAP tool invocation and toolset discovery.
+///
+/// Native targets keep the `Send + Sync` bounds so client futures can cross
+/// threads (servers spawn work freely).
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait HttpClient: Send + Sync + Clone {
+    /// Error type returned by HTTP operations.
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// POST a JSON body to the given URL. Returns the HTTP status code.
+    async fn post(&self, url: &str, body: &str) -> Result<u16, Self::Error>;
+    /// GET the given URL. Returns the HTTP status code and response body.
+    async fn get(&self, url: &str) -> Result<(u16, Vec<u8>), Self::Error>;
+}
+
+/// Abstraction over HTTP client for RAP tool invocation and toolset discovery
+/// (browser variant: no `Send`/`Sync` bounds, see the native definition).
+///
+/// On `wasm32-unknown-unknown` the futures are deliberately `!Send`: reqwest's
+/// browser backend wraps thread-local JS objects and the wasm runtime is
+/// single-threaded (work item W2; overview §9.4).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait HttpClient: Clone {
     /// Error type returned by HTTP operations.
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -58,13 +80,19 @@ impl SimpleHttpClient {
             client: reqwest::Client::new(),
         }
     }
-}
 
-#[async_trait]
-impl HttpClient for SimpleHttpClient {
-    type Error = SimpleHttpError;
+    /// Build around an existing reqwest client.
+    ///
+    /// Hosts must use this when the platform needs a specific TLS stack: on
+    /// Android, reqwest's default `rustls-platform-verifier` backend stalls the
+    /// handshake unless it was initialized (D21/D34), so the app passes its
+    /// portable client instead.
+    pub fn with_client(client: reqwest::Client) -> Self {
+        Self { client }
+    }
 
-    async fn post(&self, url: &str, body: &str) -> Result<u16, SimpleHttpError> {
+    /// Shared POST body for the two target-specific [`HttpClient`] impls.
+    async fn post_request(&self, url: &str, body: &str) -> Result<u16, SimpleHttpError> {
         let resp = self
             .client
             .post(url)
@@ -76,7 +104,8 @@ impl HttpClient for SimpleHttpClient {
         Ok(resp.status().as_u16())
     }
 
-    async fn get(&self, url: &str) -> Result<(u16, Vec<u8>), SimpleHttpError> {
+    /// Shared GET body for the two target-specific [`HttpClient`] impls.
+    async fn get_request(&self, url: &str) -> Result<(u16, Vec<u8>), SimpleHttpError> {
         let resp = self
             .client
             .get(url)
@@ -90,6 +119,34 @@ impl HttpClient for SimpleHttpClient {
             .await
             .map_err(|e| SimpleHttpError(e.to_string()))?;
         Ok((status, bytes.to_vec()))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait]
+impl HttpClient for SimpleHttpClient {
+    type Error = SimpleHttpError;
+
+    async fn post(&self, url: &str, body: &str) -> Result<u16, SimpleHttpError> {
+        self.post_request(url, body).await
+    }
+
+    async fn get(&self, url: &str) -> Result<(u16, Vec<u8>), SimpleHttpError> {
+        self.get_request(url).await
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+impl HttpClient for SimpleHttpClient {
+    type Error = SimpleHttpError;
+
+    async fn post(&self, url: &str, body: &str) -> Result<u16, SimpleHttpError> {
+        self.post_request(url, body).await
+    }
+
+    async fn get(&self, url: &str) -> Result<(u16, Vec<u8>), SimpleHttpError> {
+        self.get_request(url).await
     }
 }
 

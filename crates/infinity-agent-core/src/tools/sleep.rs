@@ -10,7 +10,8 @@ use crate::traits::InputSender;
 /// The agent loop will simply stop after this tool is invoked, and resume when new input comes in.
 pub struct SleepUntilEventOrInputTool;
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<M: InputSender + 'static> Tool<M> for SleepUntilEventOrInputTool {
     fn name(&self) -> &str {
         "sleep_until_event_or_input"
@@ -53,7 +54,8 @@ impl<M: InputSender + 'static> Tool<M> for SleepUntilEventOrInputTool {
 /// need durable timers instead (e.g. SQS delays / EventBridge Scheduler).
 pub struct TokioSleepTool;
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<M: InputSender + 'static> Tool<M> for TokioSleepTool {
     fn name(&self) -> &str {
         "sleep"
@@ -127,7 +129,8 @@ impl<M: InputSender + 'static> Tool<M> for TokioSleepTool {
 /// [`TokioSleepTool`] for platform considerations.
 pub struct TokioSleepUntilTool;
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<M: InputSender + 'static> Tool<M> for TokioSleepUntilTool {
     fn name(&self) -> &str {
         "sleep_until"

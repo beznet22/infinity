@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-whatsapp-web-probe"
+description = "Enables the whatsapp_web_probe command without any pre-configured scope."
+commands.allow = ["whatsapp_web_probe"]
+
+[[permission]]
+identifier = "deny-whatsapp-web-probe"
+description = "Denies the whatsapp_web_probe command without any pre-configured scope."
+commands.deny = ["whatsapp_web_probe"]

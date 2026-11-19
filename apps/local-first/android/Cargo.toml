@@ -1,0 +1,55 @@
+[package]
+name = "infinity-hybrid-android"
+version = "0.1.0"
+description = "Consumer archetype: Infinity Hybrid on Android via Tauri v2."
+edition = "2021"
+publish = false
+
+# Consumer archetype (decision D16): this app is NOT a member of the fork's
+# workspace. It has its own workspace so it can be copied wholesale into a
+# consumer codebase; the root workspace excludes this directory.
+[workspace]
+
+[lib]
+name = "infinity_hybrid_android_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
+
+# Fork crates. `sandbox-core` keeps its default `native` feature: the Android
+# process executor lives there.
+infinity-host = { path = "../../../crates/infinity-host" }
+infinity-agent-core = { path = "../../../crates/infinity-agent-core" }
+infinity-provider-protocol = { path = "../../../crates/infinity-provider-protocol" }
+infinity-provider-rig = { path = "../../../crates/infinity-provider-rig" }
+rap-client = { path = "../../../crates/rap-client" }
+sandbox-core = { path = "../../../crates/sandbox-core" }
+# OpenAI-compatible HTTP backend for the on-device conversation probe (Kimchi,
+# OpenRouter, …). Providers are not feature-gated in rig-core; only the HTTP
+# stack is.
+rig-core = { version = "0.31", default-features = false, features = ["reqwest-rustls"] }
+# reqwest's `rustls` feature hard-depends on `rustls-platform-verifier`, whose
+# Android backend stalls without JNI initialization and a Gradle-packaged Kotlin
+# AAR. The TLS config is built from compiled-in Mozilla roots instead (see
+# `portable_http_client`), so verification stays pure Rust on every platform.
+reqwest = { version = "0.13", default-features = false }
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
+webpki-roots = "1"
+
+# Native Android capabilities that neither the browser nor the desktop can
+# provide. The plugin is excluded from the fork workspace: it needs `tauri` and
+# is only built from this app.
+tauri-plugin-infinity-android = { path = "../crates/tauri-plugin-infinity-android" }
+# App-layer sync (event log + relay client); see apps/local-first/crates/infinity-sync.
+infinity-sync = { path = "../crates/infinity-sync", features = ["http"] }
+infinity-wasm-sandbox = { path = "../crates/infinity-wasm-sandbox" }
+uuid = "1"
+# Notifications use the official plugin; Android 13+ needs POST_NOTIFICATIONS.
+tauri-plugin-notification = "2"

@@ -64,6 +64,11 @@ pub struct ToolContext<M: InputSender> {
     pub safe_spawn_point: Option<usize>,
 }
 
+/// A tool the agent can call.
+///
+/// Native targets keep the `Send + Sync` supertraits and a `Send` future so
+/// tools can be registered and driven from multi-threaded runtimes.
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait]
 pub trait Tool<M: InputSender>: Send + Sync {
     fn name(&self) -> &str;
@@ -101,6 +106,55 @@ pub trait Tool<M: InputSender>: Send + Sync {
     /// processed inline and the completion loop continues. This avoids race
     /// conditions where a concurrent event can make the tool call appear
     /// cancelled even though it already launched.
+    async fn execute_synchronous(
+        &self,
+        _args: &serde_json::Value,
+        _id: &rap_protocol::ToolCallId<str>,
+        _call_id: Option<&rap_protocol::ProviderCallId<str>>,
+        _context: &ToolContext<M>,
+    ) -> Option<ToolResult> {
+        None
+    }
+}
+
+/// A tool the agent can call (browser variant).
+///
+/// Single-threaded by construction: on `wasm32-unknown-unknown` tools may hold
+/// a `!Send` HTTP client (reqwest's browser backend wraps thread-local JS
+/// objects), so the `Send + Sync` supertraits and the `Send` future bound are
+/// dropped. Keep the method set in sync with the native definition above
+/// (work item W2; docs/docs/WASM/overview.md §9.4).
+#[cfg(target_arch = "wasm32")]
+#[async_trait(?Send)]
+pub trait Tool<M: InputSender> {
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn parameters(&self) -> serde_json::Value;
+    async fn execute(
+        &self,
+        args: serde_json::Value,
+        id: rap_protocol::ToolCallId,
+        call_id: Option<rap_protocol::ProviderCallId>,
+        context: &ToolContext<M>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+    fn supports_sync(&self) -> bool {
+        false
+    }
+
+    /// Whether a dispatched call to this tool represents *waiting* rather
+    /// than in-flight work (e.g. the sleep tools).
+    fn is_passive(&self) -> bool {
+        false
+    }
+
+    /// Optional Rhai script for pretty-printing this tool call.
+    fn display_script(&self) -> Option<&str> {
+        None
+    }
+
+    /// Execute the tool synchronously, returning results that should be
+    /// injected into the conversation history immediately.
     async fn execute_synchronous(
         &self,
         _args: &serde_json::Value,

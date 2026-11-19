@@ -142,7 +142,8 @@ pub struct RapTool<H: HttpClient> {
     pub callback_url: Option<String>,
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl<H: HttpClient + 'static, M: InputSender + 'static> Tool<M> for RapTool<H> {
     fn name(&self) -> &str {
         &self.descriptor.name

@@ -1,0 +1,17 @@
+[package]
+name = "tauri-plugin-infinity-android"
+version = "0.1.0"
+description = "Fork-only Tauri plugin: Android capabilities the browser and desktop cannot provide (contacts, Shizuku)."
+edition = "2021"
+rust-version = "1.85"
+publish = false
+links = "tauri-plugin-infinity-android"
+
+[dependencies]
+tauri = { version = "2" }
+serde = "1"
+serde_json = "1"
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
